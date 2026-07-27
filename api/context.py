@@ -1,4 +1,4 @@
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from typing import Optional
 
 # =================================================================================================
@@ -35,9 +35,22 @@ _session_dir_ctx: ContextVar[Optional[str]] = ContextVar("session_dir", default=
 # - 作用 ：用来记录 “当前是谁在执行任务” 。
 # - 场景 ：当 Agent 打印日志或者通过 WebSocket 给前端发消息时，它需要知道：“我现在是正在服务张三，还是李四？” 这样消息才不会发错人。
 _thread_id_ctx: ContextVar[Optional[str]] = ContextVar("thread_id", default=None)
+_run_id_ctx: ContextVar[Optional[str]] = ContextVar("run_id", default=None)
+_current_entity_id_ctx: ContextVar[Optional[str]] = ContextVar(
+    "current_entity_id",
+    default=None,
+)
+_current_parent_id_ctx: ContextVar[Optional[str]] = ContextVar(
+    "current_parent_id",
+    default=None,
+)
+_current_agent_id_ctx: ContextVar[Optional[str]] = ContextVar(
+    "current_agent_id",
+    default=None,
+)
 
 
-def set_session_context(path: str):
+def set_session_context(path: str) -> Token:
     """
     设置当前请求链路的会话目录。
     通常在 Agent 开始执行任务前调用。
@@ -56,7 +69,7 @@ def get_session_context() -> Optional[str]:
     return _session_dir_ctx.get()
 
 
-def set_thread_context(thread_id: str):
+def set_thread_context(thread_id: str) -> Token:
     """
     设置当前请求链路的 Thread ID。
     """
@@ -70,7 +83,62 @@ def get_thread_context() -> Optional[str]:
     return _thread_id_ctx.get()
 
 
-def reset_session_context(session_token, thread_token=None):
+def reset_thread_context(token: Token) -> None:
+    _thread_id_ctx.reset(token)
+
+
+def set_run_context(run_id: str) -> Token:
+    return _run_id_ctx.set(run_id)
+
+
+def get_run_context() -> Optional[str]:
+    return _run_id_ctx.get()
+
+
+def reset_run_context(token: Token) -> None:
+    _run_id_ctx.reset(token)
+
+
+def set_current_entity_context(entity_id: str) -> Token:
+    return _current_entity_id_ctx.set(entity_id)
+
+
+def get_current_entity_context() -> Optional[str]:
+    return _current_entity_id_ctx.get()
+
+
+def reset_current_entity_context(token: Token) -> None:
+    _current_entity_id_ctx.reset(token)
+
+
+def set_current_parent_context(parent_id: str) -> Token:
+    return _current_parent_id_ctx.set(parent_id)
+
+
+def get_current_parent_context() -> Optional[str]:
+    return _current_parent_id_ctx.get()
+
+
+def reset_current_parent_context(token: Token) -> None:
+    _current_parent_id_ctx.reset(token)
+
+
+def set_current_agent_context(agent_id: str) -> Token:
+    return _current_agent_id_ctx.set(agent_id)
+
+
+def get_current_agent_context() -> Optional[str]:
+    return _current_agent_id_ctx.get()
+
+
+def reset_current_agent_context(token: Token) -> None:
+    _current_agent_id_ctx.reset(token)
+
+
+def reset_session_context(
+    session_token: Token,
+    thread_token: Optional[Token] = None,
+) -> None:
     """
     清理/重置上下文。
     通常在请求处理结束 (finally 块) 中调用，防止内存泄漏或污染后续请求。

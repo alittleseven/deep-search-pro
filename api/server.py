@@ -1,24 +1,37 @@
 import uuid
 import asyncio
+import sys
 import uvicorn
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List
+from typing import Dict, List, Optional
 import shutil
 
 # Add project root to sys.path
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-# Import agent runner and monitor
-# 注意：agent.main_agent 导入时会初始化 main_agent，这可能需要几秒钟
-from agent.main_agent import run_deep_agent
 from api.monitor import manager
+from api.trace_router import router as trace_router
+from api.trace_store import trace_store
 
 app = FastAPI(title="DeepAgents API")
+app.include_router(trace_router)
+
+web_dir = project_root / "web"
+app.mount("/static", StaticFiles(directory=web_dir), name="web-static")
+
+
+@app.get("/", include_in_schema=False)
+async def web_console() -> FileResponse:
+    return FileResponse(web_dir / "index.html")
+
 
 # 挂载输出目录，以便前端访问生成的静态文件
 # 假设输出目录位于项目根目录下的 output
@@ -39,10 +52,17 @@ app.add_middleware(
 )
 class TaskRequest(BaseModel):
     query: str
-    thread_id: str = None
+    thread_id: Optional[str] = None
+
+
+async def execute_deep_agent(query: str, thread_id: str, run_id: str) -> None:
+    # 延迟导入避免仅查询轨迹 API 时初始化模型；任务执行逻辑保持不变。
+    from agent.main_agent import run_deep_agent
+
+    await run_deep_agent(query, thread_id, run_id)
 
 @app.on_event("startup")
-async def startup_event():
+async def startup_event() -> None:
     """
     服务启动时，获取当前运行的事件循环，并绑定到 WebSocket 管理器。
     确保后台线程能通过 run_coroutine_threadsafe 准确投递消息。
@@ -53,16 +73,23 @@ async def startup_event():
 
 
 @app.post("/api/task")
-async def run_task(request: TaskRequest):
+async def run_task(request: TaskRequest) -> Dict[str, str]:
     # 1. [ID 初始化]
     thread_id = request.thread_id or str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
+    # 预留 run，使客户端拿到响应后可以立即连接 WebSocket。
+    await trace_store.reserve_run(thread_id, run_id)
 
     # 2. [后台执行] 异步运行 Agent，不阻塞主线程
     # 注意：这里简单的使用 asyncio.create_task 触发，由 main_agent 内部负责实时推送
-    asyncio.create_task(run_deep_agent(request.query, thread_id))
+    asyncio.create_task(execute_deep_agent(request.query, thread_id, run_id))
 
     # 3. [立即响应]
-    return {"status": "started", "thread_id": thread_id}
+    return {
+        "status": "started",
+        "thread_id": thread_id,
+        "run_id": run_id,
+    }
 
 
 @app.post("/api/upload")
@@ -193,8 +220,12 @@ async def list_files(path: str):
 #    - 这个对象封装了底层的 TCP 连接、HTTP 握手信息、以及后续的消息收发方法 ( send_text , receive_text 等)。
 # 3. 注入参数 ：FastAPI 自动把这个刚创建好的 WebSocket 对象，作为参数传给你的 websocket_endpoint(websocket, ...) 函数。
 @app.websocket("/ws/{thread_id}")
-async def websocket_endpoint(websocket: WebSocket, thread_id: str):
-    print(f"会话向我们发起了请求，要求简历连接：{thread_id} 对应：{websocket}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    thread_id: str,
+    run_id: Optional[str] = None,
+    after_sequence: int = 0,
+) -> None:
     """
     WebSocket 实时通讯核心接口 (Real-time Communication)。
 
@@ -213,30 +244,56 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
         websocket (WebSocket): WebSocket 连接实例。
         thread_id (str): 当前会话的唯一标识。
     """
-    # 1. [注册] 建立连接并绑定到管理器
-    await manager.connect(websocket, thread_id)
+    if after_sequence < 0:
+        await websocket.close(code=4400, reason="after_sequence must be non-negative")
+        return
 
+    if run_id is not None:
+        run_summary = await trace_store.get_run(run_id)
+        if run_summary is None or run_summary.thread_id != thread_id:
+            await websocket.close(code=4404, reason="run not found for thread")
+            return
+
+    # 先注册为 replaying，再读取历史；注册期间的新广播会进入连接缓冲，
+    # complete_replay 会按 event_id 去重、按 sequence 排序后切换到实时发送。
+    connection = await manager.connect(websocket, thread_id, run_id)
     try:
+        historical_events = (
+            await trace_store.list_events(
+                run_id,
+                after_sequence=after_sequence,
+            )
+            if run_id is not None
+            else []
+        )
+        await manager.complete_replay(connection, historical_events)
+
         # 2. [循环] 保持连接活跃
         while True:
             # 3. [监听] 接收前端消息 (通常是 ping 心跳)
             data = await websocket.receive_text()
 
             # 4. [响应] 回复 pong 消息
-            await websocket.send_json({
-                "type": "pong",
-                "message": f"服务端已收到: {data}"
-            })
+            await manager.send_to_connection(
+                connection,
+                {
+                    "type": "pong",
+                    "message": f"服务端已收到: {data}",
+                },
+            )
 
     except WebSocketDisconnect:
         # 5. [清理] 客户端主动断开
-        manager.disconnect(websocket, thread_id)
+        await manager.disconnect(websocket, run_id)
         print(f"[WebSocket] 客户端已断开: {thread_id}")
 
+    except asyncio.CancelledError:
+        await manager.disconnect(websocket, run_id)
+        raise
     except Exception as e:
         # 6. [异常] 发生错误时断开
-        print(f"[WebSocket] 连接异常: {e}")
-        manager.disconnect(websocket, thread_id)
+        print(f"[WebSocket] 连接异常: {type(e).__name__}")
+        await manager.disconnect(websocket, run_id)
 
 if __name__ == "__main__":
     uvicorn.run("api.server:app", host="0.0.0.0", port=8000, reload=True)

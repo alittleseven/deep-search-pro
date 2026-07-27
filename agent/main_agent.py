@@ -17,11 +17,24 @@ from api.monitor import monitor
 import asyncio
 import uuid
 import shutil
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
-from api.context import set_session_context, reset_session_context, set_thread_context
-
-from langchain_core.messages import AIMessage
+from api.context import (
+    reset_current_agent_context,
+    reset_current_entity_context,
+    reset_run_context,
+    reset_session_context,
+    reset_thread_context,
+    set_current_agent_context,
+    set_current_entity_context,
+    set_run_context,
+    set_session_context,
+    set_thread_context,
+)
+from api.trace_models import TraceEventType, TraceNodeType, TraceStatus
 
 main_agent = create_deep_agent(
    model = model,
@@ -53,59 +66,95 @@ project_root_path = Path(__file__).parents[1].resolve() # 绝对 解析路径标
 # main_agent.invoke()
 # main_agent.stream()
 # main_agent.astream() [选他]
-async def run_deep_agent(task_query,session_id):
+async def run_deep_agent(
+    task_query: str,
+    session_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+) -> None:
     """
     定义流式+异步执行主智能体！！
     执行过程中，返回  会话文件化返回  调用子智能体  调用最终结果 （monitor）
     task_query: 前端提问的问题
     session_id: 每个前端会话对应的标识 （1.存储session_id ContextVars 2.session_id 给他创建对应的output输出地址）
     """
-    print(f"当前会话的main_agent开始执行了！ 会话id:{session_id}")
-    # 准备工作 【1. session_dir（前端） 2. relative_session_dir (大模型) 3. 上传的文件拼接上传文件专属提示词】
-    # project_root_path / output / session_session_id(uuid)
-    # 当前会话存储生成文件的专属文件夹
-    session_dir = project_root_path / "output" / f"session_{session_id}"
-    # 文件夹可能没有，第一次请求要创建
-    session_dir.mkdir(parents=True, exist_ok=True)
-    # \  \n \t -> /
-    session_dir_str = str(session_dir).replace("\\","/")
-    # 获取相对文件夹
-    # session_dir : project_root_path / output / session_session_id(uuid)
-    # project_root_path : project_root_path
-    # relative_session_dir_str: / output / session_session_id(uuid)
-    relative_session_dir_str = str(session_dir.relative_to(project_root_path)).replace("\\","/")
+    session_id = session_id or str(uuid.uuid4())
+    run_id = run_id or str(uuid.uuid4())
+    root_entity_id = run_id
+    started_at = datetime.now(timezone.utc)
+    started_monotonic = time.perf_counter()
+    final_output = None
 
-    #处理上传文件 （updated / session_session_id）
-    updated_dir_path = project_root_path / "updated" / f"session_{session_id}"
-    updated_info_prompt = "" # 有上传文件，拼接上传文件专属解析位置的提示词
-    if updated_dir_path.exists():
-        # 有
-        files = [ f.name  for f in updated_dir_path.iterdir()  if f.is_file()]
-        # 将上传文件统一赋值到 output_dir 方便前端统一读取 session_dir
-        if files:
-            for filename in files:
-                # 将原文件 -》 复制 -》 目标文件中  （copy2 保留原文件修改时间和权限等元数据）
-                shutil.copy2(updated_dir_path / filename, session_dir / filename)
-            # 构建提示词！告诉大模型，有上传文件，你要读取上传文件！！
-            updated_info_prompt = (f"\n    [已上传文件] 已加载到工作目录:\n" +
-                             "\n".join([f"    - {f}" for f in files]) +
-                             "\n    请优先使用工具（read_file_content）读取并参考这些文件。")
+    session_id_token = set_thread_context(session_id)
+    run_id_token = set_run_context(run_id)
+    entity_id_token = set_current_entity_context(root_entity_id)
+    agent_id_token = set_current_agent_context(root_entity_id)
+    session_dir_token = None
 
-    # 继续准备 1. 当前会话的对应的session_id session_dir 存储到contextVars [后续工具获取，socket -> 推送消息] 2.调用monitor给前端推送session_dir信息
-    session_dir_token = set_session_context(session_dir_str)  # 存储的当前会话对应的文件夹地址
-    session_id_token = set_thread_context(session_id)  #获取当前会话的session_id对应socket
+    print(
+        "当前会话的main_agent开始执行了！ "
+        f"会话id:{session_id} run_id:{run_id}"
+    )
+    try:
+        await monitor.emit_event(
+            event=TraceEventType.RUN_STARTED,
+            node_type=TraceNodeType.RUN,
+            status=TraceStatus.RUNNING,
+            entity_id=root_entity_id,
+            name="deep_search",
+            message="智能体任务已开始",
+            started_at=started_at,
+            input={"query": task_query},
+            thread_id=session_id,
+            run_id=run_id,
+        )
 
-    monitor.report_session_dir(session_dir_str)  # 当前会话对应的文件夹地址推送给起前端！
+        # 准备会话目录、上传文件和智能体工作目录提示词。
+        session_dir = project_root_path / "output" / f"session_{session_id}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        session_dir_str = str(session_dir).replace("\\", "/")
+        relative_session_dir_str = str(
+            session_dir.relative_to(project_root_path)
+        ).replace("\\", "/")
 
-    # 执行main_agent
-    config = {
-        "configurable":{
-            "thread_id":session_id
+        updated_dir_path = project_root_path / "updated" / f"session_{session_id}"
+        updated_info_prompt = ""
+        if updated_dir_path.exists():
+            files = [
+                file.name
+                for file in updated_dir_path.iterdir()
+                if file.is_file()
+            ]
+            if files:
+                for filename in files:
+                    shutil.copy2(
+                        updated_dir_path / filename,
+                        session_dir / filename,
+                    )
+                updated_info_prompt = (
+                    "\n    [已上传文件] 已加载到工作目录:\n"
+                    + "\n".join([f"    - {filename}" for filename in files])
+                    + "\n    请优先使用工具（read_file_content）读取并参考这些文件。"
+                )
+
+        session_dir_token = set_session_context(session_dir_str)
+        await monitor.emit_event(
+            event=TraceEventType.SESSION_CREATED,
+            node_type=TraceNodeType.RUN,
+            status=TraceStatus.RUNNING,
+            entity_id=root_entity_id,
+            message=f"工作目录已创建: {session_dir_str}",
+            output={"path": session_dir_str},
+            data={"path": session_dir_str},
+            thread_id=session_id,
+            run_id=run_id,
+        )
+
+        config = {
+            "configurable": {
+                "thread_id": session_id,
+            }
         }
-    }
-
-    # 构建提示词
-    path_instruction = f"""
+        path_instruction = f"""
     【工作环境指令】
     工作目录: {relative_session_dir_str}
     {updated_info_prompt}
@@ -116,9 +165,7 @@ async def run_deep_agent(task_query,session_id):
     3. 使用相对路径，禁止使用绝对路径
     4. 若存在上传文件，请先分析内容
     """
-    # 反馈结果
-    try:
-        # 执行
+
         async for chunk in main_agent.astream({
             "messages":[
                 {
@@ -149,14 +196,80 @@ async def run_deep_agent(task_query,session_id):
                                     # 调用某个子智能体
                                     monitor.report_assistant(tool_call['args']['subagent_type'],{'description':tool_call['args']['description']})
                         elif last_msg.content:
-                            # 最终结果
-                            print(f"主智能体执行结果，最终结果：{last_msg.content[:100]}")
-                            monitor.report_task_result(last_msg.content)
+                            print("主智能体已生成最终结果")
+                            final_output = last_msg.content
 
-    except Exception as e :
-        # 报错推送错误信息给前端
-        monitor._emit("error",f"执行主智能发生异常信息：{str(e)}")
+        ended_at = datetime.now(timezone.utc)
+        duration_ms = int((time.perf_counter() - started_monotonic) * 1_000)
+        await monitor.emit_event(
+            event=TraceEventType.RUN_COMPLETED,
+            node_type=TraceNodeType.RUN,
+            status=TraceStatus.COMPLETED,
+            entity_id=root_entity_id,
+            name="deep_search",
+            message="智能体任务执行完成",
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_ms=duration_ms,
+            output=final_output,
+            data={"result": final_output},
+            thread_id=session_id,
+            run_id=run_id,
+        )
+    except asyncio.CancelledError as exc:
+        ended_at = datetime.now(timezone.utc)
+        try:
+            await monitor.emit_event(
+                event=TraceEventType.RUN_FAILED,
+                node_type=TraceNodeType.RUN,
+                status=TraceStatus.CANCELLED,
+                entity_id=root_entity_id,
+                name="deep_search",
+                message="智能体任务已取消",
+                started_at=started_at,
+                ended_at=ended_at,
+                duration_ms=int(
+                    (time.perf_counter() - started_monotonic) * 1_000
+                ),
+                error=exc,
+                thread_id=session_id,
+                run_id=run_id,
+            )
+        except Exception as trace_error:
+            print(
+                "[Agent] Failed to record cancelled run: "
+                f"{type(trace_error).__name__}"
+            )
+        raise
+    except Exception as exc:
+        ended_at = datetime.now(timezone.utc)
+        try:
+            await monitor.emit_event(
+                event=TraceEventType.RUN_FAILED,
+                node_type=TraceNodeType.RUN,
+                status=TraceStatus.FAILED,
+                entity_id=root_entity_id,
+                name="deep_search",
+                message="执行主智能体时发生异常",
+                started_at=started_at,
+                ended_at=ended_at,
+                duration_ms=int(
+                    (time.perf_counter() - started_monotonic) * 1_000
+                ),
+                error=exc,
+                thread_id=session_id,
+                run_id=run_id,
+            )
+        except Exception as trace_error:
+            print(
+                "[Agent] Failed to record failed run: "
+                f"{type(trace_error).__name__}"
+            )
+        # 保留原实现的异常处理语义：记录失败后结束后台任务。
     finally:
-        # 释放存储的地址和session_id
-        reset_session_context(session_dir_token, session_id_token)
-
+        if session_dir_token is not None:
+            reset_session_context(session_dir_token)
+        reset_current_agent_context(agent_id_token)
+        reset_current_entity_context(entity_id_token)
+        reset_run_context(run_id_token)
+        reset_thread_context(session_id_token)
