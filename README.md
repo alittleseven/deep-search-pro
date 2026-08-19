@@ -123,7 +123,11 @@ TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxx
 python api/server.py
 ```
 
-访问 `http://localhost:8000/docs` 能看到 Swagger 文档，直接在页面上试。
+访问 `http://localhost:8000/` 打开 **Deep Search Pro Console**。控制台可以先上传
+参考文件，再使用同一个 `thread_id` 创建任务，并通过 run 级 WebSocket 实时展示
+轨迹、最终 Markdown 结果与生成文件。
+
+访问 `http://localhost:8000/docs` 仍然可以打开 Swagger 文档并直接调试 API。
 
 ### 第四步：试一试
 
@@ -231,6 +235,45 @@ deep_search_pro/
 | 知识库 | RAGFlow | 开源的 RAG 引擎，可以本地部署 |
 | 数据库 | MySQL | 关系型数据库，Agent 自动写 SQL |
 | 文档生成 | markdown + pywin32 | MD 生成 + Word COM 转 PDF |
+
+---
+
+## 📡 轨迹 API
+
+`POST /api/task` 现在会为每次调用创建独立的 `run_id`：
+
+```json
+{
+  "status": "started",
+  "thread_id": "conversation-id",
+  "run_id": "unique-run-id"
+}
+```
+
+`thread_id` 表示可复用的会话，`run_id` 表示该会话中的一次任务运行；
+即使复用 `thread_id`，每次请求也会获得新的 `run_id`。
+
+历史查询：
+
+```text
+GET /api/runs/{run_id}/trace?after_sequence=12&limit=100
+GET /api/threads/{thread_id}/runs
+```
+
+`after_sequence` 是排他的，只返回 sequence 大于该值的事件。WebSocket
+连接可以使用同样的断点恢复语义：
+
+```text
+ws://localhost:8000/ws/{thread_id}?run_id={run_id}&after_sequence=12
+```
+
+当前阶段只提供 run 级开始、完成和失败生命周期，以及已有监控调用的协议兼容；
+完整的 agent、tool、retrieval 和 report 生命周期将在后续阶段补充。轨迹存储目前
+是单进程内存存储，服务重启后会丢失；多 worker 或多实例之间暂不共享轨迹。
+Web 控制台会按照 `event_id` 去重并使用 `sequence` 断点重连；页面刷新时会从当前
+进程内的轨迹 API 恢复最近一次运行。对于只有开始事件、没有完成事件的 agent 和
+tool，控制台不会推断其已成功完成。
+兼容字段 `type="monitor_event"` 和 `data` 在 1.x 协议期间保留，2.0 协议可能移除。
 
 ---
 
