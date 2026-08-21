@@ -1,12 +1,12 @@
-import { downloadUrl } from "./api.js?v=20260821-4";
-import { renderMarkdown } from "./markdown.js?v=20260821-4";
-import { RunClient } from "./run-client.js?v=20260821-4";
+import { downloadUrl } from "./api.js?v=20260821-5";
+import { renderMarkdown } from "./markdown.js?v=20260821-5";
+import { RunClient } from "./run-client.js?v=20260821-5";
 import {
   createSessionRecord,
   SessionRepository,
   traceUrl,
-} from "./session.js?v=20260821-4";
-import { ConsoleStore, isTerminalStatus, ROLE_DEFINITIONS } from "./state.js?v=20260821-4";
+} from "./session.js?v=20260821-5";
+import { ConsoleStore, isTerminalStatus, ROLE_DEFINITIONS } from "./state.js?v=20260821-5";
 
 const elements = Object.fromEntries(
   [...document.querySelectorAll("[id]")].map((element) => [element.id, element]),
@@ -337,6 +337,7 @@ async function submitQuestion(event) {
       threadId: store.snapshot.threadId,
       files: queuedFiles,
     });
+    if (!response) return;
     repository.save(createSessionRecord({
       threadId: response.thread_id,
       runId: response.run_id,

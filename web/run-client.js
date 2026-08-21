@@ -5,8 +5,8 @@ import {
   fetchTrace,
   startTask,
   uploadFiles,
-} from "./api.js?v=20260821-4";
-import { isTerminalStatus } from "./state.js?v=20260821-4";
+} from "./api.js?v=20260821-5";
+import { isTerminalStatus } from "./state.js?v=20260821-5";
 
 export class RunClient {
   constructor({ store, onNotice = () => {} }) {
@@ -17,15 +17,19 @@ export class RunClient {
     this.reconnectAttempts = 0;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
+    this.operationGeneration = 0;
   }
 
   async start({ query, threadId, files = [] }) {
+    const generation = ++this.operationGeneration;
     if (files.length) {
       this.store.setTaskStatus("uploading");
       await uploadFiles(threadId, files);
+      if (generation !== this.operationGeneration) return null;
     }
     this.store.setTaskStatus("starting");
     const response = await startTask(query, threadId);
+    if (generation !== this.operationGeneration) return null;
     if (!response.run_id || !response.thread_id) {
       throw new Error("任务响应缺少 thread_id 或 run_id。");
     }
@@ -40,8 +44,10 @@ export class RunClient {
 
   async restore({ threadId, runId = null }) {
     if (!threadId) return null;
+    const generation = ++this.operationGeneration;
     this.store.patch({ threadId, runId });
     const thread = await fetchThreadRuns(threadId);
+    if (generation !== this.operationGeneration) return null;
     const summary = runId
       ? thread.runs?.find((item) => item.run_id === runId)
       : thread.runs?.[0];
@@ -60,6 +66,7 @@ export class RunClient {
     this.store.patch({ runId: summary.run_id });
     this.store.prepareRestore();
     const trace = await fetchTrace(summary.run_id, 0);
+    if (generation !== this.operationGeneration) return null;
     for (const event of trace.events) {
       this.store.addEvent(event);
     }
@@ -70,7 +77,8 @@ export class RunClient {
         endedAt: summary.ended_at || null,
       });
     }
-    await this.refreshFiles();
+    await this.refreshFiles(this.store.snapshot.outputPath, generation);
+    if (generation !== this.operationGeneration) return null;
     if (isTerminalStatus(this.store.snapshot.taskStatus)) {
       this.store.setConnection("idle");
     } else {
@@ -79,14 +87,19 @@ export class RunClient {
     return summary;
   }
 
-  async refreshFiles(path = this.store.snapshot.outputPath) {
+  async refreshFiles(
+    path = this.store.snapshot.outputPath,
+    generation = this.operationGeneration,
+  ) {
     if (!path) return [];
     try {
       const result = await fetchFiles(path);
+      if (generation !== this.operationGeneration) return [];
       const files = result.files || [];
       this.store.setFiles(files);
       return files;
     } catch (error) {
+      if (generation !== this.operationGeneration) return [];
       this.store.addClientError(error.message, "files");
       this.onNotice(`无法加载生成文件：${error.message}`);
       return [];
@@ -100,13 +113,18 @@ export class RunClient {
     this.heartbeatTimer = null;
   }
 
-  close(reason = "client navigation") {
+  closeSocket(reason = "client navigation") {
     this.socketGeneration += 1;
     this.clearTimers();
     if (this.socket) {
       this.socket.close(1000, reason);
       this.socket = null;
     }
+  }
+
+  close(reason = "client navigation") {
+    this.operationGeneration += 1;
+    this.closeSocket(reason);
   }
 
   scheduleReconnect(generation) {
@@ -125,7 +143,7 @@ export class RunClient {
     const { threadId, runId, lastSequence } = this.store.snapshot;
     if (!threadId || !runId) return;
 
-    this.close();
+    this.closeSocket();
     const generation = this.socketGeneration;
     this.store.setConnection("connecting");
 

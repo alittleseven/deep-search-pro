@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  chatUrl,
   createSessionRecord,
   parseTraceSelection,
+  restoredQuery,
   SessionRepository,
   traceUrl,
   upsertSession,
@@ -56,6 +58,13 @@ test("Trace selection prefers URL values and encodes links", () => {
     { threadId: "t 1", runId: "r/2" },
   );
   assert.equal(traceUrl("t 1", "r/2"), "/trace?thread_id=t+1&run_id=r%2F2");
+  assert.equal(chatUrl("t 1", "r/2"), "/?thread_id=t+1&run_id=r%2F2");
+});
+
+test("restoredQuery returns a query once when a run becomes available", () => {
+  assert.equal(restoredQuery(null, { runId: "run-1", query: "库存情况" }), "库存情况");
+  assert.equal(restoredQuery("run-1", { runId: "run-1", query: "库存情况" }), null);
+  assert.equal(restoredQuery(null, { runId: "run-1", query: "" }), null);
 });
 
 test("SessionRepository safely handles invalid stored JSON", () => {

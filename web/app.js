@@ -1,20 +1,22 @@
-import { downloadUrl } from "./api.js?v=20260821-4";
-import { renderMarkdown, stringifyValue } from "./markdown.js?v=20260821-4";
-import { RunClient } from "./run-client.js?v=20260821-4";
+import { downloadUrl } from "./api.js?v=20260821-5";
+import { renderMarkdown, stringifyValue } from "./markdown.js?v=20260821-5";
+import { RunClient } from "./run-client.js?v=20260821-5";
 import {
+  chatUrl,
   createSessionRecord,
   parseTraceSelection,
+  restoredQuery,
   SessionRepository,
-} from "./session.js?v=20260821-4";
+} from "./session.js?v=20260821-5";
 import {
   ConsoleStore,
   ROLE_DEFINITIONS,
   roleForEvent,
-} from "./state.js?v=20260821-4";
+} from "./state.js?v=20260821-5";
 import {
   ExecutionVisualizer,
   statusForNode,
-} from "./visualizer.js?v=20260821-4";
+} from "./visualizer.js?v=20260821-5";
 
 const repository = new SessionRepository();
 const fallback = repository.list()[0] || {};
@@ -38,6 +40,7 @@ let eventStatusFilter = ["all", "running", "completed", "failed"].includes(
 )
   ? viewParams.get("event_status")
   : "all";
+let inputRunId = null;
 let lastReportedOutput = Symbol("initial");
 let noticeTimer = null;
 const runClient = new RunClient({ store, onNotice: showNotice });
@@ -170,6 +173,13 @@ function renderHeader(snapshot) {
   elements["thread-id"].title = snapshot.threadId;
   elements["run-id"].textContent = formatIdentifier(snapshot.runId);
   elements["run-id"].title = snapshot.runId || "";
+  elements["chat-link"].href = chatUrl(snapshot.threadId, snapshot.runId);
+
+  const query = restoredQuery(inputRunId, snapshot);
+  if (query !== null) {
+    elements["task-input"].value = query;
+    inputRunId = snapshot.runId;
+  }
 
   elements["connection-pill"].dataset.status = snapshot.connection;
   elements["connection-label"].textContent = connectionLabel(snapshot.connection);
@@ -238,6 +248,7 @@ function openInspector(nextSelection, trigger = document.activeElement) {
   elements["inspector-drawer"].removeAttribute("inert");
   elements["inspector-drawer"].setAttribute("aria-hidden", "false");
   render(store.snapshot);
+  elements["close-inspector"].focus();
 }
 
 function closeInspector() {
@@ -547,6 +558,7 @@ async function runSearch() {
       threadId,
       files: queuedFiles,
     });
+    if (!response) return;
     repository.save(createSessionRecord({
       threadId: response.thread_id,
       runId: response.run_id,
@@ -709,8 +721,25 @@ elements["graph-zoom-out"].addEventListener("click", () => visualizer.zoomBy(-1)
 elements["graph-fit"].addEventListener("click", () => visualizer.fit());
 
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && elements["inspector-drawer"].classList.contains("open")) {
+  const drawerOpen = elements["inspector-drawer"].classList.contains("open");
+  if (event.key === "Escape" && drawerOpen) {
     closeInspector();
+    return;
+  }
+  if (event.key === "Tab" && drawerOpen) {
+    const focusable = [...elements["inspector-drawer"].querySelectorAll(
+      'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled)',
+    )];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 });
 

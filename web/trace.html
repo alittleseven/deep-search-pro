@@ -8,8 +8,8 @@
   <meta name="description" content="Deep Search 运行追踪与诊断">
   <title>运行详情 - Deep Search</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.ico">
-  <link rel="stylesheet" href="/static/styles.css?v=20260821-4">
-  <link rel="stylesheet" href="/static/trace.css?v=20260821-4">
+  <link rel="stylesheet" href="/static/styles.css?v=20260821-5">
+  <link rel="stylesheet" href="/static/trace.css?v=20260821-5">
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到运行详情</a>
@@ -22,7 +22,7 @@
         </a>
       </div>
       <nav class="trace-navigation" aria-label="主要页面">
-        <a href="/">
+        <a id="chat-link" href="/">
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>
           <span>对话</span>
         </a>
@@ -164,7 +164,8 @@
                 </div>
               </div>
               <button class="inspector-backdrop" id="inspector-backdrop" type="button" aria-label="关闭节点详情"></button>
-              <aside class="inspector-drawer" id="inspector-drawer" aria-labelledby="inspector-title" aria-hidden="true" inert>
+              <aside class="inspector-drawer" id="inspector-drawer" role="dialog" aria-modal="true"
+                     aria-labelledby="inspector-title" aria-hidden="true" inert>
                 <header class="inspector-header">
                   <div><span class="eyebrow">Inspector</span><h2 id="inspector-title">Main Agent</h2></div>
                   <div><span class="badge" id="inspector-status">Idle</span><button class="icon-button" id="close-inspector" type="button" aria-label="关闭节点详情" title="关闭节点详情"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
@@ -216,6 +217,6 @@
   <div class="notice hidden" id="notice" role="status" aria-live="polite">
     <span id="notice-text"></span><button type="button" id="dismiss-notice">关闭</button>
   </div>
-  <script type="module" src="/static/app.js?v=20260821-4"></script>
+  <script type="module" src="/static/app.js?v=20260821-5"></script>
 </body>
 </html>

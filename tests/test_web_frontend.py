@@ -1,3 +1,4 @@
+import re
 import threading
 from pathlib import Path
 
@@ -127,6 +128,7 @@ def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:
 
     for element_id in (
         "run-title",
+        "chat-link",
         "task-input",
         "run-button",
         "role-summary",
@@ -162,12 +164,24 @@ def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
 
     assert 'aria-live="polite"' in pages
     assert 'aria-label="关闭节点详情"' in pages
+    assert 'role="dialog"' in pages
+    assert 'aria-modal="true"' in pages
     assert ":focus-visible" in styles
     assert "prefers-reduced-motion" in styles
     assert "@media (max-width: 900px)" in styles
     assert "font-size: 8px" not in styles
     assert "font-size: 9px" not in styles
     assert "font-size: 10px" not in styles
+    assert not re.search(
+        r"\.trace-topbar\s+\.trace-button\s*\{[^}]*display:\s*none",
+        styles,
+        re.DOTALL,
+    )
+
+    trace_script = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    assert "chatUrl" in trace_script
+    assert "restoredQuery" in trace_script
+    assert 'elements["close-inspector"].focus()' in trace_script
 
 
 def test_upload_completes_before_task_submission(monkeypatch, tmp_path) -> None:

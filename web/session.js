@@ -41,6 +41,20 @@ export function traceUrl(threadId, runId) {
   return query ? `/trace?${query}` : "/trace";
 }
 
+export function chatUrl(threadId, runId) {
+  const params = new URLSearchParams();
+  if (threadId) params.set("thread_id", threadId);
+  if (runId) params.set("run_id", runId);
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
+}
+
+export function restoredQuery(previousRunId, snapshot) {
+  const query = String(snapshot.query || "").trim();
+  if (!snapshot.runId || snapshot.runId === previousRunId || !query) return null;
+  return query;
+}
+
 export class SessionRepository {
   constructor(storage = globalThis.localStorage) {
     this.storage = storage;

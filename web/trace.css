@@ -960,8 +960,12 @@
 }
 
 @media (max-width: 560px) {
-  .trace-topbar .connection-label span,
-  .trace-topbar .trace-button { display: none; }
+  .trace-topbar .connection-label span { display: none; }
+  .trace-topbar .trace-button {
+    min-width: 52px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
   .trace-content { padding-top: 22px; }
   .section-heading { align-items: flex-end; }
   .metrics { grid-template-columns: repeat(2, 1fr); }
