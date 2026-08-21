@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Live execution console for Deep Search Pro">
+  <title>运行详情 - Deep Search</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/trace.css">
+</head>
+<body>
+  <main class="console-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div>
+          <h1>Deep Search Pro</h1>
+          <p>Multi-agent research console</p>
+        </div>
+      </div>
+
+      <div class="session-strip">
+        <div class="connection-pill" id="connection-pill" data-status="idle">
+          <span class="status-dot"></span>
+          <span id="connection-label">No active run</span>
+        </div>
+        <div class="thread-chip">
+          <span class="eyebrow">Thread</span>
+          <code id="thread-id">—</code>
+          <button class="icon-button" id="copy-thread" type="button" aria-label="Copy thread ID">Copy</button>
+        </div>
+        <button class="button secondary" id="new-session" type="button">New session</button>
+      </div>
+    </header>
+
+    <section class="task-controls" aria-labelledby="task-label">
+      <div class="query-field">
+        <label class="eyebrow" id="task-label" for="task-input">Research task</label>
+        <textarea id="task-input" rows="2" placeholder="Describe the research question, desired evidence, and output…"></textarea>
+      </div>
+
+      <label class="upload-zone" id="upload-zone" for="file-input" tabindex="0">
+        <input id="file-input" type="file" multiple hidden>
+        <span class="upload-title">Add reference files</span>
+        <span class="upload-meta" id="upload-meta">Drop files or browse</span>
+      </label>
+
+      <div class="run-actions">
+        <div>
+          <span class="eyebrow">Task status</span>
+          <span class="task-state" id="task-state" data-status="idle">Idle</span>
+        </div>
+        <button class="button primary" id="run-button" type="button">Run search</button>
+      </div>
+    </section>
+
+    <div class="notice hidden" id="notice" role="status" aria-live="polite">
+      <span id="notice-text"></span>
+      <button type="button" id="dismiss-notice" aria-label="Dismiss notification">Dismiss</button>
+    </div>
+
+    <section class="workspace">
+      <aside class="agent-rail panel" aria-labelledby="agents-title">
+        <header class="panel-header">
+          <div>
+            <span class="eyebrow">Execution roles</span>
+            <h2 id="agents-title">Agents</h2>
+          </div>
+          <span class="count-badge" id="active-role-count">0 active</span>
+        </header>
+
+        <div class="agent-list" id="agent-list">
+          <button class="agent-card selected" type="button" data-role="main">
+            <span class="agent-index">01</span>
+            <span class="agent-content">
+              <span class="agent-title-row">
+                <strong>Main Agent</strong>
+                <span class="badge" data-agent-status>Idle</span>
+              </span>
+              <span class="agent-purpose">Orchestrates research and produces the final response.</span>
+              <span class="agent-event" data-agent-event>No events observed</span>
+              <span class="agent-meta"><span data-agent-availability>Availability unreported</span><span data-agent-count>0 triggers</span></span>
+            </span>
+          </button>
+
+          <button class="agent-card" type="button" data-role="network">
+            <span class="agent-index">02</span>
+            <span class="agent-content">
+              <span class="agent-title-row">
+                <strong>Network Search</strong>
+                <span class="badge" data-agent-status>Idle</span>
+              </span>
+              <span class="agent-purpose">Finds current public information through Tavily.</span>
+              <span class="agent-event" data-agent-event>No events observed</span>
+              <span class="agent-meta"><span data-agent-availability>Availability unreported</span><span data-agent-count>0 triggers</span></span>
+            </span>
+          </button>
+
+          <button class="agent-card" type="button" data-role="database">
+            <span class="agent-index">03</span>
+            <span class="agent-content">
+              <span class="agent-title-row">
+                <strong>Database Query</strong>
+                <span class="badge" data-agent-status>Idle</span>
+              </span>
+              <span class="agent-purpose">Inspects MySQL tables and executes database queries.</span>
+              <span class="agent-event" data-agent-event>No events observed</span>
+              <span class="agent-meta"><span data-agent-availability>Availability unreported</span><span data-agent-count>0 triggers</span></span>
+            </span>
+          </button>
+
+          <button class="agent-card" type="button" data-role="knowledge">
+            <span class="agent-index">04</span>
+            <span class="agent-content">
+              <span class="agent-title-row">
+                <strong>Knowledge Base</strong>
+                <span class="badge" data-agent-status>Idle</span>
+              </span>
+              <span class="agent-purpose">Queries configured RAGFlow knowledge assistants.</span>
+              <span class="agent-event" data-agent-event>No events observed</span>
+              <span class="agent-meta"><span data-agent-availability>Availability unreported</span><span data-agent-count>0 triggers</span></span>
+            </span>
+          </button>
+
+          <button class="agent-card" type="button" data-role="files">
+            <span class="agent-index">05</span>
+            <span class="agent-content">
+              <span class="agent-title-row">
+                <strong>Report / Files</strong>
+                <span class="badge" data-agent-status>Idle</span>
+              </span>
+              <span class="agent-purpose">Generates Markdown, PDF, and other task artifacts.</span>
+              <span class="agent-event" data-agent-event>No events observed</span>
+              <span class="agent-meta"><span data-agent-availability>Availability unreported</span><span data-agent-count>0 triggers</span></span>
+            </span>
+          </button>
+        </div>
+
+        <div class="protocol-note">
+          <span class="status-dot"></span>
+          <div>
+            <strong>Trace protocol 1.0</strong>
+            <span>Observed events only. Start-only roles are not inferred as completed.</span>
+          </div>
+        </div>
+      </aside>
+
+      <section class="execution-panel panel" aria-labelledby="execution-title">
+        <header class="panel-header execution-heading">
+          <div>
+            <span class="eyebrow">Observed topology</span>
+            <h2 id="execution-title">Execution graph</h2>
+          </div>
+          <span class="run-id-label">Run <code id="run-id">—</code></span>
+        </header>
+
+        <div class="metrics" aria-label="Run metrics">
+          <div class="metric">
+            <span>Elapsed time</span>
+            <strong id="metric-elapsed">—</strong>
+          </div>
+          <div class="metric">
+            <span>Events</span>
+            <strong id="metric-events">0</strong>
+          </div>
+          <div class="metric">
+            <span>Active agent</span>
+            <strong id="metric-agent">—</strong>
+          </div>
+          <div class="metric">
+            <span>Tool calls</span>
+            <strong id="metric-tools">0</strong>
+          </div>
+          <div class="metric">
+            <span>Generated files</span>
+            <strong id="metric-files">0</strong>
+          </div>
+          <div class="metric">
+            <span>Connection</span>
+            <strong id="metric-connection">Idle</strong>
+          </div>
+        </div>
+
+        <div class="graph" id="execution-graph">
+          <svg class="graph-edges" id="graph-edges" aria-hidden="true"></svg>
+
+          <button class="graph-node node-input" type="button" data-node="input" data-status="idle">
+            <span class="node-kicker">Input</span>
+            <strong>User request</strong>
+            <span class="node-detail">Awaiting submission</span>
+            <span class="badge">Idle</span>
+          </button>
+
+          <button class="graph-node node-main" type="button" data-node="main" data-status="idle">
+            <span class="node-kicker">Orchestrator</span>
+            <strong>Main Agent</strong>
+            <span class="node-detail">No run observed</span>
+            <span class="badge">Idle</span>
+          </button>
+
+          <button class="graph-node node-network conditional" type="button" data-node="network" data-status="idle">
+            <span class="node-kicker">Conditional</span>
+            <strong>Network Search</strong>
+            <span class="node-detail">Not invoked</span>
+            <span class="badge">Idle</span>
+          </button>
+
+          <button class="graph-node node-database conditional" type="button" data-node="database" data-status="idle">
+            <span class="node-kicker">Conditional</span>
+            <strong>Database Query</strong>
+            <span class="node-detail">Not invoked</span>
+            <span class="badge">Idle</span>
+          </button>
+
+          <button class="graph-node node-knowledge conditional" type="button" data-node="knowledge" data-status="idle">
+            <span class="node-kicker">Conditional</span>
+            <strong>Knowledge Base</strong>
+            <span class="node-detail">Not invoked</span>
+            <span class="badge">Idle</span>
+          </button>
+
+          <button class="graph-node node-synthesis" type="button" data-node="synthesis" data-status="unknown">
+            <span class="node-kicker">Main Agent</span>
+            <strong>Synthesis</strong>
+            <span class="node-detail">No explicit event</span>
+            <span class="badge">Unknown</span>
+          </button>
+
+          <button class="graph-node node-files" type="button" data-node="files" data-status="idle">
+            <span class="node-kicker">Artifacts</span>
+            <strong>Report / Files</strong>
+            <span class="node-detail">No files observed</span>
+            <span class="badge">Idle</span>
+          </button>
+
+          <button class="graph-node node-output" type="button" data-node="output" data-status="idle">
+            <span class="node-kicker">Result</span>
+            <strong>Final Output</strong>
+            <span class="node-detail">Awaiting completion</span>
+            <span class="badge">Idle</span>
+          </button>
+
+          <div class="graph-empty" id="graph-empty">
+            Submit a research task to populate the live trace.
+          </div>
+        </div>
+      </section>
+
+      <aside class="inspector panel" aria-labelledby="inspector-title">
+        <header class="panel-header">
+          <div>
+            <span class="eyebrow">Inspector</span>
+            <h2 id="inspector-title">Main Agent</h2>
+          </div>
+          <span class="badge" id="inspector-status">Idle</span>
+        </header>
+
+        <nav class="inspector-tabs" aria-label="Inspector sections">
+          <button class="active" type="button" data-inspector-tab="overview">Overview</button>
+          <button type="button" data-inspector-tab="input">Input</button>
+          <button type="button" data-inspector-tab="output">Output</button>
+          <button type="button" data-inspector-tab="event">Event</button>
+          <button type="button" data-inspector-tab="error">Error</button>
+        </nav>
+
+        <div class="inspector-body" id="inspector-body"></div>
+      </aside>
+
+      <section class="bottom-panel panel" aria-labelledby="bottom-title">
+        <header class="bottom-tabs">
+          <h2 class="sr-only" id="bottom-title">Run details</h2>
+          <button class="active" type="button" data-bottom-tab="events">Live events <span id="tab-event-count">0</span></button>
+          <button type="button" data-bottom-tab="report">Final report</button>
+          <button type="button" data-bottom-tab="files">Generated files <span id="tab-file-count">0</span></button>
+          <button type="button" data-bottom-tab="raw">Raw events</button>
+          <button class="collapse-button" id="collapse-bottom" type="button" aria-expanded="true">Collapse</button>
+        </header>
+
+        <div class="bottom-content" id="bottom-content">
+          <section class="tab-panel active" data-bottom-panel="events">
+            <div class="events-header event-grid" aria-hidden="true">
+              <span>Time</span><span>Agent / Tool</span><span>Event</span><span>Status</span><span>Message</span>
+            </div>
+            <div class="events-list" id="events-list">
+              <div class="empty-state">No trace events received.</div>
+            </div>
+          </section>
+
+          <section class="tab-panel report-panel" data-bottom-panel="report">
+            <div class="markdown-body" id="final-report">
+              <div class="empty-state">The final Markdown report appears after a real <code>run_completed</code> event.</div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-bottom-panel="files">
+            <div class="files-list" id="files-list">
+              <div class="empty-state">Generated files appear after the backend creates a session directory.</div>
+            </div>
+          </section>
+
+          <section class="tab-panel raw-panel" data-bottom-panel="raw">
+            <pre id="raw-events">No WebSocket messages received.</pre>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js?v=20260821-1"></script>
+</body>
+</html>

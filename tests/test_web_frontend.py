@@ -10,22 +10,48 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = PROJECT_ROOT / "web"
 
 
-def test_web_console_static_assets_and_swagger_remain_available() -> None:
+def test_chat_and_trace_pages_and_static_assets_are_available() -> None:
     with TestClient(server.app) as client:
-        root = client.get("/")
-        css = client.get("/static/styles.css")
-        javascript = client.get("/static/app.js")
+        chat = client.get("/")
+        trace = client.get("/trace")
+        assets = {
+            path: client.get(path)
+            for path in (
+                "/static/styles.css",
+                "/static/trace.css",
+                "/static/chat.js",
+                "/static/app.js",
+                "/static/session.js",
+                "/static/markdown.js",
+                "/static/run-client.js",
+            )
+        }
         docs = client.get("/docs")
 
-    assert root.status_code == 200
-    assert "Deep Search Pro Console" in root.text
-    assert 'type="module"' in root.text
-    assert css.status_code == 200
-    assert "text/css" in css.headers["content-type"]
-    assert javascript.status_code == 200
-    assert "javascript" in javascript.headers["content-type"]
+    assert chat.status_code == 200
+    assert "Deep Search" in chat.text
+    assert 'src="/static/chat.js?v=' in chat.text
+    assert trace.status_code == 200
+    assert "运行详情" in trace.text
+    assert 'src="/static/app.js?v=' in trace.text
+    assert all(response.status_code == 200 for response in assets.values())
+    assert "text/css" in assets["/static/styles.css"].headers["content-type"]
+    assert "text/css" in assets["/static/trace.css"].headers["content-type"]
+    assert all(
+        "javascript" in response.headers["content-type"]
+        for path, response in assets.items()
+        if path.endswith(".js")
+    )
     assert docs.status_code == 200
     assert "Swagger UI" in docs.text
+
+
+def test_web_console_favicon_is_available() -> None:
+    with TestClient(server.app) as client:
+        favicon = client.get("/favicon.ico")
+
+    assert favicon.status_code == 200
+    assert "image/" in favicon.headers["content-type"]
 
 
 def test_frontend_uses_no_external_runtime_or_html_injection_sink() -> None:
