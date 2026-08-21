@@ -674,6 +674,9 @@ elements["event-status-filter"].addEventListener("change", (event) => {
 
 elements["close-inspector"].addEventListener("click", closeInspector);
 elements["inspector-backdrop"].addEventListener("click", closeInspector);
+elements["graph-zoom-in"].addEventListener("click", () => visualizer.zoomBy(1));
+elements["graph-zoom-out"].addEventListener("click", () => visualizer.zoomBy(-1));
+elements["graph-fit"].addEventListener("click", () => visualizer.fit());
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements["inspector-drawer"].classList.contains("open")) {
