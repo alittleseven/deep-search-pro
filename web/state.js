@@ -129,16 +129,20 @@ function outputPathFrom(event) {
   return event.output?.path || event.data?.path || null;
 }
 
-function initialSnapshot() {
+function initialSnapshot(selection = {}) {
   const persisted = readPersisted();
+  const explicitSelection = Boolean(selection.threadId || selection.runId);
+  const threadId = selection.threadId || persisted.threadId || crypto.randomUUID();
+  const runId = selection.runId || (selection.threadId ? null : persisted.runId) || null;
+  const samePersistedRun = runId && runId === persisted.runId;
   return {
-    threadId: persisted.threadId || crypto.randomUUID(),
-    runId: persisted.runId || null,
-    outputPath: persisted.outputPath || null,
-    lastSequence: Number.isInteger(persisted.lastSequence)
+    threadId,
+    runId,
+    outputPath: samePersistedRun ? persisted.outputPath || null : null,
+    lastSequence: !explicitSelection && Number.isInteger(persisted.lastSequence)
       ? persisted.lastSequence
       : 0,
-    taskStatus: persisted.runId ? "restoring" : "idle",
+    taskStatus: runId ? "restoring" : "idle",
     connection: "idle",
     query: "",
     events: [],
@@ -153,8 +157,8 @@ function initialSnapshot() {
 }
 
 export class ConsoleStore {
-  constructor() {
-    this.snapshot = initialSnapshot();
+  constructor(selection = {}) {
+    this.snapshot = initialSnapshot(selection);
     this.listeners = new Set();
     this.eventIds = new Set();
     this.persist();
