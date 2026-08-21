@@ -48,14 +48,18 @@ input {
 }
 
 button,
-a { -webkit-tap-highlight-color: transparent; }
+a {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
 button { border: 0; }
 a { color: inherit; }
 
 button:focus-visible,
 a:focus-visible,
 textarea:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }
@@ -72,6 +76,27 @@ svg {
 
 code,
 pre { font-family: var(--mono); }
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 8px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  color: var(--black);
+  background: var(--teal);
+  text-decoration: none;
+  transform: translateY(-150%);
+}
+
+.skip-link:focus { transform: translateY(0); }
 
 .app-shell {
   display: grid;
@@ -202,7 +227,6 @@ pre { font-family: var(--mono); }
   border-radius: 6px;
   color: var(--text-2);
   background: #141819;
-  outline: 0;
 }
 
 .session-search input:focus {
@@ -498,7 +522,7 @@ textarea::placeholder { color: #6f7a78; }
   width: 28px;
   height: 28px;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .progress-panel { padding-left: 37px; }
@@ -746,7 +770,6 @@ textarea::placeholder { color: #6f7a78; }
   padding: 2px 4px 8px;
   border: 0;
   background: transparent;
-  outline: 0;
   line-height: 1.55;
 }
 
@@ -883,11 +906,15 @@ textarea::placeholder { color: #6f7a78; }
     bottom: 0;
     left: 0;
     width: min(300px, calc(100vw - 48px));
+    visibility: hidden;
     transform: translateX(-100%);
-    transition: transform 180ms ease;
+    transition: transform 180ms ease, visibility 180ms ease;
   }
 
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open {
+    visibility: visible;
+    transform: translateX(0);
+  }
 
   .sidebar-backdrop {
     position: fixed;

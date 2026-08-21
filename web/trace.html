@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#090b0c">
   <meta name="description" content="Deep Search 运行追踪与诊断">
   <title>运行详情 - Deep Search</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.ico">
@@ -11,6 +12,7 @@
   <link rel="stylesheet" href="/static/trace.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">跳到运行详情</a>
   <div class="app-shell trace-shell">
     <aside class="sidebar trace-sidebar" aria-label="页面导航">
       <div class="sidebar-brand">
@@ -35,7 +37,7 @@
       </div>
     </aside>
 
-    <main class="trace-workspace">
+    <main class="trace-workspace" id="main-content">
       <header class="topbar trace-topbar">
         <div class="topbar-title">
           <div>
@@ -74,11 +76,11 @@
             <div class="task-controls">
               <div class="query-field">
                 <label id="task-label" for="task-input">研究问题</label>
-                <textarea id="task-input" rows="3" maxlength="12000"
-                          placeholder="输入需要追踪执行过程的问题"></textarea>
+                <textarea id="task-input" name="query" rows="3" maxlength="12000" autocomplete="off"
+                          placeholder="输入需要追踪执行过程的问题…"></textarea>
               </div>
               <label class="upload-zone" id="upload-zone" for="file-input" tabindex="0">
-                <input id="file-input" type="file" multiple hidden>
+                <input id="file-input" name="files" type="file" multiple hidden>
                 <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0-12 4 4m-4-4L8 7"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
                 <span><strong>添加参考文件</strong><small id="upload-meta">拖放文件或点击选择</small></span>
               </label>
@@ -162,7 +164,7 @@
                 </div>
               </div>
               <button class="inspector-backdrop" id="inspector-backdrop" type="button" aria-label="关闭节点详情"></button>
-              <aside class="inspector-drawer" id="inspector-drawer" aria-labelledby="inspector-title" aria-hidden="true">
+              <aside class="inspector-drawer" id="inspector-drawer" aria-labelledby="inspector-title" aria-hidden="true" inert>
                 <header class="inspector-header">
                   <div><span class="eyebrow">Inspector</span><h2 id="inspector-title">Main Agent</h2></div>
                   <div><span class="badge" id="inspector-status">Idle</span><button class="icon-button" id="close-inspector" type="button" aria-label="关闭节点详情" title="关闭节点详情"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
@@ -193,8 +195,8 @@
             <div class="bottom-content" id="bottom-content">
               <section class="tab-panel active" data-bottom-panel="events">
                 <div class="event-tools">
-                  <label><span class="sr-only">搜索事件</span><input id="event-search" type="search" placeholder="搜索事件"></label>
-                  <label><span class="sr-only">按状态筛选</span><select id="event-status-filter"><option value="all">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option></select></label>
+                  <label><span class="sr-only">搜索事件</span><input id="event-search" name="event-search" type="search" placeholder="搜索事件…" autocomplete="off"></label>
+                  <label><span class="sr-only">按状态筛选</span><select id="event-status-filter" name="event-status-filter" autocomplete="off"><option value="all">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option></select></label>
                 </div>
                 <div class="events-table">
                   <div class="events-header event-grid" aria-hidden="true"><span>时间</span><span>角色 / 工具</span><span>事件</span><span>状态</span><span>消息</span></div>

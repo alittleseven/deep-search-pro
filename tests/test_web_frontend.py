@@ -139,6 +139,26 @@ def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:
     assert 'data-bottom-tab="raw"' in html
 
 
+def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
+    pages = "\n".join(
+        (WEB_ROOT / name).read_text(encoding="utf-8")
+        for name in ("index.html", "trace.html")
+    )
+    styles = "\n".join(
+        (WEB_ROOT / name).read_text(encoding="utf-8")
+        for name in ("styles.css", "trace.css")
+    )
+
+    assert 'aria-live="polite"' in pages
+    assert 'aria-label="关闭节点详情"' in pages
+    assert ":focus-visible" in styles
+    assert "prefers-reduced-motion" in styles
+    assert "@media (max-width: 900px)" in styles
+    assert "font-size: 8px" not in styles
+    assert "font-size: 9px" not in styles
+    assert "font-size: 10px" not in styles
+
+
 def test_upload_completes_before_task_submission(monkeypatch, tmp_path) -> None:
     executed = threading.Event()
     observation = {}

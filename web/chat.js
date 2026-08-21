@@ -61,7 +61,7 @@ function isBusy(status) {
 
 function shortId(value) {
   const text = String(value || "");
-  return text.length > 14 ? `${text.slice(0, 8)}...${text.slice(-4)}` : text;
+  return text.length > 14 ? `${text.slice(0, 8)}…${text.slice(-4)}` : text;
 }
 
 function formatSessionTime(value) {
@@ -353,11 +353,17 @@ async function submitQuestion(event) {
     store.patch({ query });
     store.setTaskStatus("failed");
     pendingQuery = "";
-    showNotice(`无法启动任务：${error.message}`, true);
+    showNotice(`无法启动任务：${error.message}。请检查服务配置后重试。`, true);
   }
 }
 
 function newSession() {
+  if (
+    isBusy(store.snapshot.taskStatus)
+    && !window.confirm("当前任务仍在运行。确定离开并新建对话吗？")
+  ) {
+    return;
+  }
   runClient.close();
   pendingQuery = "";
   queuedFiles = [];
@@ -453,6 +459,13 @@ elements["open-sidebar"].addEventListener("click", openSidebar);
 elements["close-sidebar"].addEventListener("click", closeSidebar);
 elements["sidebar-backdrop"].addEventListener("click", closeSidebar);
 
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements.sidebar.classList.contains("open")) {
+    closeSidebar();
+    elements["open-sidebar"].focus();
+  }
+});
+
 for (const eventName of ["dragenter", "dragover"]) {
   elements.composer.addEventListener(eventName, (event) => {
     event.preventDefault();
@@ -469,4 +482,9 @@ elements.composer.addEventListener("drop", (event) => {
   if (!isBusy(store.snapshot.taskStatus)) queueSelectedFiles(event.dataTransfer?.files || []);
 });
 
-window.addEventListener("beforeunload", () => runClient.close());
+window.addEventListener("beforeunload", (event) => {
+  runClient.close();
+  if (queuedFiles.length || pendingQuery) {
+    event.preventDefault();
+  }
+});

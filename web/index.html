@@ -4,12 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#090b0c">
   <meta name="description" content="Deep Search 企业知识与数据问答">
   <title>Deep Search</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.ico">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">跳到对话内容</a>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="会话导航">
       <div class="sidebar-brand">
@@ -33,7 +35,7 @@
 
       <label class="session-search" for="session-search">
         <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="session-search" type="search" placeholder="搜索会话" autocomplete="off">
+        <input id="session-search" name="session-search" type="search" placeholder="搜索会话…" autocomplete="off">
       </label>
 
       <div class="sidebar-section-label">最近对话</div>
@@ -49,7 +51,7 @@
     <button class="sidebar-backdrop" id="sidebar-backdrop" type="button"
             aria-label="关闭会话导航" title="关闭会话导航"></button>
 
-    <main class="chat-workspace">
+    <main class="chat-workspace" id="main-content">
       <header class="topbar">
         <div class="topbar-title">
           <button class="icon-button mobile-only" id="open-sidebar" type="button"
@@ -89,11 +91,11 @@
       <form id="composer" class="composer">
         <div id="queued-files" class="queued-files" aria-live="polite"></div>
         <label class="sr-only" for="task-input">输入问题</label>
-        <textarea id="task-input" rows="3" maxlength="12000"
-                  placeholder="询问产品、库存、销量或手册内容"></textarea>
+        <textarea id="task-input" name="query" rows="3" maxlength="12000" autocomplete="off"
+                  placeholder="询问产品、库存、销量或手册内容…"></textarea>
         <div class="composer-actions">
           <div class="composer-tools">
-            <input id="file-input" type="file" multiple hidden>
+            <input id="file-input" name="files" type="file" multiple hidden>
             <button class="icon-button" id="attach-button" type="button"
                     aria-label="添加附件" title="添加附件">
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9"/></svg>

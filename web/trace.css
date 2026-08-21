@@ -94,6 +94,7 @@
   color: var(--text-2);
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .trace-scroll {
@@ -182,7 +183,6 @@
   padding: 11px 13px;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
-  outline: 0;
   background: var(--surface);
   line-height: 1.55;
 }
@@ -313,6 +313,7 @@
   color: var(--text-2);
   font-family: var(--mono);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .count-badge,
@@ -609,6 +610,7 @@
   border-left: 1px solid var(--line-strong);
   background: #121617;
   box-shadow: -18px 0 40px rgba(0, 0, 0, 0.34);
+  overscroll-behavior: contain;
   transform: translateX(101%);
   transition: transform 180ms ease;
 }
@@ -766,7 +768,6 @@
   border-radius: 6px;
   color: var(--text-2);
   background: var(--surface);
-  outline: 0;
   font-size: 12px;
 }
 
@@ -809,6 +810,9 @@
   background: transparent;
   font-family: var(--mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 54px;
 }
 
 .event-row:hover,
@@ -912,6 +916,7 @@
     padding: 5px 10px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+    visibility: visible;
     transform: none;
   }
 

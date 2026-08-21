@@ -18,6 +18,7 @@ import {
 
 const repository = new SessionRepository();
 const fallback = repository.list()[0] || {};
+const viewParams = new URLSearchParams(window.location.search);
 const selection = parseTraceSelection(window.location.search, fallback);
 const store = new ConsoleStore(selection);
 const elements = Object.fromEntries(
@@ -28,9 +29,15 @@ let queuedFiles = [];
 let selected = { kind: "node", id: "main" };
 let selectedTrigger = null;
 let inspectorTab = "overview";
-let bottomTab = "events";
-let eventSearch = "";
-let eventStatusFilter = "all";
+let bottomTab = ["events", "report", "files", "raw"].includes(viewParams.get("tab"))
+  ? viewParams.get("tab")
+  : "events";
+let eventSearch = viewParams.get("event_search") || "";
+let eventStatusFilter = ["all", "running", "completed", "failed"].includes(
+  viewParams.get("event_status"),
+)
+  ? viewParams.get("event_status")
+  : "all";
 let lastReportedOutput = Symbol("initial");
 let noticeTimer = null;
 const runClient = new RunClient({ store, onNotice: showNotice });
@@ -97,6 +104,21 @@ function showNotice(message, sticky = false) {
       elements.notice.classList.add("hidden");
     }, 7000);
   }
+}
+
+function syncViewUrl() {
+  const url = new URL(window.location.href);
+  if (store.snapshot.threadId) url.searchParams.set("thread_id", store.snapshot.threadId);
+  else url.searchParams.delete("thread_id");
+  if (store.snapshot.runId) url.searchParams.set("run_id", store.snapshot.runId);
+  else url.searchParams.delete("run_id");
+  if (bottomTab === "events") url.searchParams.delete("tab");
+  else url.searchParams.set("tab", bottomTab);
+  if (eventSearch) url.searchParams.set("event_search", eventSearch);
+  else url.searchParams.delete("event_search");
+  if (eventStatusFilter === "all") url.searchParams.delete("event_status");
+  else url.searchParams.set("event_status", eventStatusFilter);
+  history.replaceState(null, "", url);
 }
 
 function taskLabel(status) {
@@ -213,6 +235,7 @@ function openInspector(nextSelection, trigger = document.activeElement) {
   selectedTrigger = trigger instanceof HTMLElement ? trigger : null;
   elements["inspector-drawer"].classList.add("open");
   elements["inspector-backdrop"].classList.add("open");
+  elements["inspector-drawer"].removeAttribute("inert");
   elements["inspector-drawer"].setAttribute("aria-hidden", "false");
   render(store.snapshot);
 }
@@ -220,6 +243,7 @@ function openInspector(nextSelection, trigger = document.activeElement) {
 function closeInspector() {
   elements["inspector-drawer"].classList.remove("open");
   elements["inspector-backdrop"].classList.remove("open");
+  elements["inspector-drawer"].setAttribute("inert", "");
   elements["inspector-drawer"].setAttribute("aria-hidden", "true");
   selectedTrigger?.focus();
 }
@@ -529,13 +553,14 @@ async function runSearch() {
       query,
       status: "running",
     }));
+    syncViewUrl();
     queuedFiles = [];
     elements["file-input"].value = "";
     updateUploadMeta();
   } catch (error) {
     store.setTaskStatus("failed");
     store.addClientError(error.message, "task");
-    showNotice(`Could not start the task: ${error.message}`, true);
+    showNotice(`无法启动任务：${error.message}。请检查服务配置后重试。`, true);
   }
 }
 
@@ -559,6 +584,7 @@ async function restoreSession() {
     if (!summary) {
       store.setTaskStatus("idle");
     }
+    syncViewUrl();
   } catch (error) {
     store.addClientError(error.message, "restore");
     store.patch({
@@ -622,6 +648,7 @@ elements["new-session"].addEventListener("click", () => {
   selected = { kind: "node", id: "main" };
   updateUploadMeta();
   store.newSession();
+  history.replaceState(null, "", "/trace");
 });
 
 elements["copy-thread"].addEventListener("click", async () => {
@@ -651,6 +678,7 @@ for (const button of document.querySelectorAll("[data-bottom-tab]")) {
   button.addEventListener("click", () => {
     bottomTab = button.dataset.bottomTab;
     renderBottomTabs();
+    syncViewUrl();
   });
 }
 
@@ -665,11 +693,13 @@ elements["records-collapse"].addEventListener("click", () => {
 elements["event-search"].addEventListener("input", (event) => {
   eventSearch = event.target.value;
   renderEvents(store.snapshot);
+  syncViewUrl();
 });
 
 elements["event-status-filter"].addEventListener("change", (event) => {
   eventStatusFilter = event.target.value;
   renderEvents(store.snapshot);
+  syncViewUrl();
 });
 
 elements["close-inspector"].addEventListener("click", closeInspector);
@@ -690,6 +720,8 @@ elements["dismiss-notice"].addEventListener("click", () => {
 });
 
 window.addEventListener("beforeunload", () => runClient.close());
+elements["event-search"].value = eventSearch;
+elements["event-status-filter"].value = eventStatusFilter;
 store.subscribe(render);
 window.setInterval(updateElapsed, 1000);
 restoreSession();
