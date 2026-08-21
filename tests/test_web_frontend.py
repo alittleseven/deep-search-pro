@@ -30,9 +30,12 @@ def test_chat_and_trace_pages_and_static_assets_are_available() -> None:
 
     assert chat.status_code == 200
     assert "Deep Search" in chat.text
+    assert 'href="/static/styles.css?v=' in chat.text
     assert 'src="/static/chat.js?v=' in chat.text
     assert trace.status_code == 200
     assert "运行详情" in trace.text
+    assert 'href="/static/styles.css?v=' in trace.text
+    assert 'href="/static/trace.css?v=' in trace.text
     assert 'src="/static/app.js?v=' in trace.text
     assert all(response.status_code == 200 for response in assets.values())
     assert "text/css" in assets["/static/styles.css"].headers["content-type"]
@@ -78,6 +81,14 @@ def test_frontend_uses_no_external_runtime_or_html_injection_sink() -> None:
     assert "await uploadFiles" in run_client
     assert "await startTask" in run_client
     assert run_client.index("await uploadFiles") < run_client.index("await startTask")
+
+
+def test_frontend_static_module_imports_are_cache_busted() -> None:
+    for name in ("app.js", "chat.js", "run-client.js"):
+        source = (WEB_ROOT / name).read_text(encoding="utf-8")
+        imports = [line for line in source.splitlines() if 'from "./' in line]
+        assert imports
+        assert all(".js?v=" in line for line in imports)
 
 
 def test_chat_page_exposes_complete_question_workflow() -> None:

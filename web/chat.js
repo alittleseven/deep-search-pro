@@ -1,12 +1,12 @@
-import { downloadUrl } from "./api.js";
-import { renderMarkdown } from "./markdown.js";
-import { RunClient } from "./run-client.js";
+import { downloadUrl } from "./api.js?v=20260821-4";
+import { renderMarkdown } from "./markdown.js?v=20260821-4";
+import { RunClient } from "./run-client.js?v=20260821-4";
 import {
   createSessionRecord,
   SessionRepository,
   traceUrl,
-} from "./session.js";
-import { ConsoleStore, isTerminalStatus, ROLE_DEFINITIONS } from "./state.js";
+} from "./session.js?v=20260821-4";
+import { ConsoleStore, isTerminalStatus, ROLE_DEFINITIONS } from "./state.js?v=20260821-4";
 
 const elements = Object.fromEntries(
   [...document.querySelectorAll("[id]")].map((element) => [element.id, element]),
