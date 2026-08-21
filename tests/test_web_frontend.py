@@ -70,6 +70,15 @@ def test_frontend_uses_no_external_runtime_or_html_injection_sink() -> None:
     assert "javascript:" not in sources
     assert "textContent" in sources
 
+    markdown = (WEB_ROOT / "markdown.js").read_text(encoding="utf-8")
+    run_client = (WEB_ROOT / "run-client.js").read_text(encoding="utf-8")
+    assert "export function renderMarkdown" in markdown
+    assert "export function stringifyValue" in markdown
+    assert "export class RunClient" in run_client
+    assert "await uploadFiles" in run_client
+    assert "await startTask" in run_client
+    assert run_client.index("await uploadFiles") < run_client.index("await startTask")
+
 
 def test_upload_completes_before_task_submission(monkeypatch, tmp_path) -> None:
     executed = threading.Event()

@@ -1,15 +1,8 @@
-import {
-  connectTrace,
-  downloadUrl,
-  fetchFiles,
-  fetchThreadRuns,
-  fetchTrace,
-  startTask,
-  uploadFiles,
-} from "./api.js";
+import { downloadUrl } from "./api.js";
+import { renderMarkdown, stringifyValue } from "./markdown.js";
+import { RunClient } from "./run-client.js";
 import {
   ConsoleStore,
-  isTerminalStatus,
   ROLE_DEFINITIONS,
   roleForEvent,
 } from "./state.js";
@@ -24,16 +17,12 @@ const elements = Object.fromEntries(
 );
 
 let queuedFiles = [];
-let socket = null;
-let socketGeneration = 0;
-let reconnectTimer = null;
-let heartbeatTimer = null;
-let reconnectAttempts = 0;
 let selected = { kind: "node", id: "main" };
 let inspectorTab = "overview";
 let bottomTab = "events";
 let lastReportedOutput = Symbol("initial");
 let noticeTimer = null;
+const runClient = new RunClient({ store, onNotice: showNotice });
 
 const visualizer = new ExecutionVisualizer(
   elements["execution-graph"],
@@ -86,17 +75,6 @@ function formatDuration(milliseconds) {
   if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
   if (minutes) return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
   return `${remainder}s`;
-}
-
-function stringifyValue(value) {
-  if (value === undefined) return "Unavailable";
-  if (value === null) return "null";
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 function showNotice(message, sticky = false) {
@@ -263,149 +241,6 @@ function renderEvents(snapshot) {
     fragment.append(row);
   }
   list.replaceChildren(fragment);
-}
-
-function isSafeLink(href) {
-  try {
-    const url = new URL(href, window.location.href);
-    return ["http:", "https:", "mailto:"].includes(url.protocol);
-  } catch {
-    return false;
-  }
-}
-
-function appendInlineMarkdown(parent, text) {
-  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_([^_\n]+)_|\[[^\]\n]+\]\([^) \n]+\))/g;
-  let cursor = 0;
-  for (const match of text.matchAll(pattern)) {
-    const index = match.index || 0;
-    if (index > cursor) {
-      parent.append(document.createTextNode(text.slice(cursor, index)));
-    }
-    const token = match[0];
-    if (token.startsWith("`")) {
-      parent.append(makeElement("code", "", token.slice(1, -1)));
-    } else if (token.startsWith("**") || token.startsWith("__")) {
-      parent.append(makeElement("strong", "", token.slice(2, -2)));
-    } else if (token.startsWith("*") || token.startsWith("_")) {
-      parent.append(makeElement("em", "", token.slice(1, -1)));
-    } else if (token.startsWith("[")) {
-      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (linkMatch && isSafeLink(linkMatch[2])) {
-        const anchor = makeElement("a", "", linkMatch[1]);
-        anchor.href = linkMatch[2];
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-        parent.append(anchor);
-      } else {
-        parent.append(document.createTextNode(token));
-      }
-    }
-    cursor = index + token.length;
-  }
-  if (cursor < text.length) {
-    parent.append(document.createTextNode(text.slice(cursor)));
-  }
-}
-
-function isBlockStart(line) {
-  return /^(#{1,6})\s+/.test(line)
-    || /^```/.test(line)
-    || /^\s*>\s?/.test(line)
-    || /^\s*[-*+]\s+/.test(line)
-    || /^\s*\d+\.\s+/.test(line)
-    || /^\s*(---+|\*\*\*+)\s*$/.test(line);
-}
-
-function renderMarkdown(value, container) {
-  const source = stringifyValue(value).replaceAll("\r\n", "\n");
-  const lines = source.split("\n");
-  const fragment = document.createDocumentFragment();
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    const fence = line.match(/^```(.*)$/);
-    if (fence) {
-      index += 1;
-      const codeLines = [];
-      while (index < lines.length && !/^```/.test(lines[index])) {
-        codeLines.push(lines[index]);
-        index += 1;
-      }
-      if (index < lines.length) index += 1;
-      const pre = makeElement("pre");
-      const code = makeElement("code", "", codeLines.join("\n"));
-      if (fence[1].trim()) code.dataset.language = fence[1].trim();
-      pre.append(code);
-      fragment.append(pre);
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
-    if (heading) {
-      const element = makeElement(`h${heading[1].length}`);
-      appendInlineMarkdown(element, heading[2]);
-      fragment.append(element);
-      index += 1;
-      continue;
-    }
-
-    if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) {
-      fragment.append(makeElement("hr"));
-      index += 1;
-      continue;
-    }
-
-    if (/^\s*>\s?/.test(line)) {
-      const values = [];
-      while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
-        values.push(lines[index].replace(/^\s*>\s?/, ""));
-        index += 1;
-      }
-      const quote = makeElement("blockquote");
-      appendInlineMarkdown(quote, values.join("\n"));
-      fragment.append(quote);
-      continue;
-    }
-
-    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
-    const ordered = line.match(/^\s*\d+\.\s+(.+)$/);
-    if (unordered || ordered) {
-      const list = makeElement(unordered ? "ul" : "ol");
-      const matcher = unordered ? /^\s*[-*+]\s+(.+)$/ : /^\s*\d+\.\s+(.+)$/;
-      while (index < lines.length) {
-        const itemMatch = lines[index].match(matcher);
-        if (!itemMatch) break;
-        const item = makeElement("li");
-        appendInlineMarkdown(item, itemMatch[1]);
-        list.append(item);
-        index += 1;
-      }
-      fragment.append(list);
-      continue;
-    }
-
-    const paragraphLines = [line];
-    index += 1;
-    while (
-      index < lines.length
-      && lines[index].trim()
-      && !isBlockStart(lines[index])
-    ) {
-      paragraphLines.push(lines[index]);
-      index += 1;
-    }
-    const paragraph = makeElement("p");
-    appendInlineMarkdown(paragraph, paragraphLines.join(" "));
-    fragment.append(paragraph);
-  }
-  container.replaceChildren(fragment);
 }
 
 function renderReport(snapshot) {
@@ -634,98 +469,6 @@ function render(snapshot) {
   elements["tab-file-count"].textContent = String(snapshot.files.length);
 }
 
-async function refreshFiles(path = store.snapshot.outputPath) {
-  if (!path) return;
-  try {
-    const result = await fetchFiles(path);
-    store.setFiles(result.files || []);
-  } catch (error) {
-    store.addClientError(error.message, "files");
-    showNotice(`Could not load generated files: ${error.message}`);
-  }
-}
-
-function clearSocketTimers() {
-  clearTimeout(reconnectTimer);
-  clearInterval(heartbeatTimer);
-  reconnectTimer = null;
-  heartbeatTimer = null;
-}
-
-function closeSocket() {
-  socketGeneration += 1;
-  clearSocketTimers();
-  if (socket) {
-    socket.close(1000, "client navigation");
-    socket = null;
-  }
-}
-
-function scheduleReconnect(generation) {
-  if (generation !== socketGeneration || isTerminalStatus(store.snapshot.taskStatus)) return;
-  const delay = Math.min(1000 * (2 ** reconnectAttempts), 15000);
-  reconnectAttempts += 1;
-  reconnectTimer = window.setTimeout(() => connectSocket(), delay);
-}
-
-function connectSocket() {
-  const { threadId, runId, lastSequence } = store.snapshot;
-  if (!threadId || !runId) return;
-
-  closeSocket();
-  const generation = socketGeneration;
-  store.setConnection("connecting");
-
-  const nextSocket = connectTrace({
-    threadId,
-    runId,
-    afterSequence: lastSequence,
-    onOpen: () => {
-      if (generation !== socketGeneration) return;
-      reconnectAttempts = 0;
-      store.setConnection("connected");
-      heartbeatTimer = window.setInterval(() => {
-        if (nextSocket.readyState === WebSocket.OPEN) {
-          nextSocket.send("ping");
-        }
-      }, 25000);
-    },
-    onMessage: (message) => {
-      if (generation !== socketGeneration) return;
-      store.addRawMessage(message);
-      if (message.type === "monitor_event" || message.event) {
-        const added = store.addEvent(message);
-        if (added && message.event === "session_created") {
-          refreshFiles();
-        }
-        if (added && (message.event === "run_completed" || message.event === "run_failed")) {
-          refreshFiles();
-          clearInterval(heartbeatTimer);
-        }
-      }
-    },
-    onError: () => {
-      if (generation !== socketGeneration) return;
-      store.setConnection("disconnected");
-    },
-    onClose: (event) => {
-      if (generation !== socketGeneration) return;
-      clearInterval(heartbeatTimer);
-      socket = null;
-      store.setConnection("disconnected");
-      if (event.code === 4404) {
-        store.addClientError("The saved run is no longer available in the trace store.", "websocket");
-        showNotice("The saved run is no longer available. Start a new run to reconnect.", true);
-        return;
-      }
-      if (!isTerminalStatus(store.snapshot.taskStatus)) {
-        scheduleReconnect(generation);
-      }
-    },
-  });
-  socket = nextSocket;
-}
-
 async function runSearch() {
   const query = elements["task-input"].value.trim();
   if (!query) {
@@ -739,24 +482,14 @@ async function runSearch() {
 
   const threadId = store.snapshot.threadId || crypto.randomUUID();
   try {
-    if (queuedFiles.length) {
-      store.setTaskStatus("uploading");
-      await uploadFiles(threadId, queuedFiles);
-    }
-    store.setTaskStatus("starting");
-    const response = await startTask(query, threadId);
-    if (!response.run_id || !response.thread_id) {
-      throw new Error("The task response did not include thread_id and run_id.");
-    }
-    store.beginRun({
+    await runClient.start({
       query,
-      threadId: response.thread_id,
-      runId: response.run_id,
+      threadId,
+      files: queuedFiles,
     });
     queuedFiles = [];
     elements["file-input"].value = "";
     updateUploadMeta();
-    connectSocket();
   } catch (error) {
     store.setTaskStatus("failed");
     store.addClientError(error.message, "task");
@@ -777,41 +510,12 @@ function setQueuedFiles(files) {
 
 async function restoreSession() {
   try {
-    let runId = store.snapshot.runId;
-    let summary = null;
-
-    if (!runId && store.snapshot.threadId) {
-      const thread = await fetchThreadRuns(store.snapshot.threadId);
-      summary = thread.runs?.[0] || null;
-      runId = summary?.run_id || null;
-      if (runId) store.patch({ runId });
-    }
-    if (!runId) {
-      store.setTaskStatus("idle");
-      return;
-    }
-
+    const summary = await runClient.restore({
+      threadId: store.snapshot.threadId,
+      runId: store.snapshot.runId,
+    });
     if (!summary) {
-      const thread = await fetchThreadRuns(store.snapshot.threadId);
-      summary = thread.runs?.find((run) => run.run_id === runId) || null;
-    }
-    store.prepareRestore();
-    const trace = await fetchTrace(runId, 0);
-    for (const event of trace.events) {
-      store.addEvent(event);
-    }
-    if (!trace.events.length && summary) {
-      store.patch({
-        taskStatus: summary.status || "idle",
-        startedAt: summary.started_at || null,
-        endedAt: summary.ended_at || null,
-      });
-    }
-    await refreshFiles();
-    if (!isTerminalStatus(store.snapshot.taskStatus)) {
-      connectSocket();
-    } else {
-      store.setConnection("idle");
+      store.setTaskStatus("idle");
     }
   } catch (error) {
     store.addClientError(error.message, "restore");
@@ -868,7 +572,7 @@ elements["new-session"].addEventListener("click", () => {
   ) {
     return;
   }
-  closeSocket();
+  runClient.close();
   queuedFiles = [];
   elements["file-input"].value = "";
   elements["task-input"].value = "";
@@ -923,7 +627,7 @@ elements["dismiss-notice"].addEventListener("click", () => {
   elements.notice.classList.add("hidden");
 });
 
-window.addEventListener("beforeunload", closeSocket);
+window.addEventListener("beforeunload", () => runClient.close());
 store.subscribe(render);
 window.setInterval(updateElapsed, 1000);
 restoreSession();
