@@ -2,6 +2,11 @@ import { downloadUrl } from "./api.js";
 import { renderMarkdown, stringifyValue } from "./markdown.js";
 import { RunClient } from "./run-client.js";
 import {
+  createSessionRecord,
+  parseTraceSelection,
+  SessionRepository,
+} from "./session.js";
+import {
   ConsoleStore,
   ROLE_DEFINITIONS,
   roleForEvent,
@@ -11,15 +16,21 @@ import {
   statusForNode,
 } from "./visualizer.js";
 
-const store = new ConsoleStore();
+const repository = new SessionRepository();
+const fallback = repository.list()[0] || {};
+const selection = parseTraceSelection(window.location.search, fallback);
+const store = new ConsoleStore(selection);
 const elements = Object.fromEntries(
   [...document.querySelectorAll("[id]")].map((element) => [element.id, element]),
 );
 
 let queuedFiles = [];
 let selected = { kind: "node", id: "main" };
+let selectedTrigger = null;
 let inspectorTab = "overview";
 let bottomTab = "events";
+let eventSearch = "";
+let eventStatusFilter = "all";
 let lastReportedOutput = Symbol("initial");
 let noticeTimer = null;
 const runClient = new RunClient({ store, onNotice: showNotice });
@@ -197,29 +208,54 @@ function eventSource(event) {
   return event.node_type || "Run";
 }
 
-function selectEvent(event) {
-  selected = {
-    kind: "event",
-    id: event.event_id || `${event.run_id}:${event.sequence}`,
-    event,
-  };
+function openInspector(nextSelection, trigger = document.activeElement) {
+  selected = nextSelection;
+  selectedTrigger = trigger instanceof HTMLElement ? trigger : null;
+  elements["inspector-drawer"].classList.add("open");
+  elements["inspector-backdrop"].classList.add("open");
+  elements["inspector-drawer"].setAttribute("aria-hidden", "false");
   render(store.snapshot);
 }
 
-function selectNode(nodeId) {
-  selected = { kind: "node", id: nodeId };
+function closeInspector() {
+  elements["inspector-drawer"].classList.remove("open");
+  elements["inspector-backdrop"].classList.remove("open");
+  elements["inspector-drawer"].setAttribute("aria-hidden", "true");
+  selectedTrigger?.focus();
+}
+
+function selectEvent(event, trigger) {
+  openInspector({
+    kind: "event",
+    id: event.event_id || `${event.run_id}:${event.sequence}`,
+    event,
+  }, trigger);
+}
+
+function selectNode(nodeId, trigger) {
   visualizer.select(nodeId);
-  render(store.snapshot);
+  openInspector({ kind: "node", id: nodeId }, trigger);
 }
 
 function renderEvents(snapshot) {
   const list = elements["events-list"];
-  if (!snapshot.events.length) {
-    list.replaceChildren(makeElement("div", "empty-state", "No trace events received."));
+  const normalizedSearch = eventSearch.toLocaleLowerCase();
+  const visibleEvents = snapshot.events.filter((event) => {
+    const matchesStatus = eventStatusFilter === "all"
+      || (event.status || "unknown") === eventStatusFilter;
+    const haystack = `${event.name || ""} ${event.event || ""} ${event.message || ""}`
+      .toLocaleLowerCase();
+    return matchesStatus && haystack.includes(normalizedSearch);
+  });
+  if (!visibleEvents.length) {
+    const message = snapshot.events.length
+      ? "没有符合筛选条件的事件。"
+      : "暂无追踪事件。";
+    list.replaceChildren(makeElement("div", "empty-state", message));
     return;
   }
   const fragment = document.createDocumentFragment();
-  for (const event of snapshot.events) {
+  for (const event of visibleEvents) {
     const row = makeElement("button", "event-row event-grid");
     row.type = "button";
     row.dataset.status = event.status || "unknown";
@@ -237,7 +273,7 @@ function renderEvents(snapshot) {
       makeElement("span", "", event.message || "—"),
     );
     row.title = `Sequence ${event.sequence || "—"} · ${event.event}`;
-    row.addEventListener("click", () => selectEvent(event));
+    row.addEventListener("click", () => selectEvent(event, row));
     fragment.append(row);
   }
   list.replaceChildren(fragment);
@@ -482,11 +518,17 @@ async function runSearch() {
 
   const threadId = store.snapshot.threadId || crypto.randomUUID();
   try {
-    await runClient.start({
+    const response = await runClient.start({
       query,
       threadId,
       files: queuedFiles,
     });
+    repository.save(createSessionRecord({
+      threadId: response.thread_id,
+      runId: response.run_id,
+      query,
+      status: "running",
+    }));
     queuedFiles = [];
     elements["file-input"].value = "";
     updateUploadMeta();
@@ -585,17 +627,14 @@ elements["new-session"].addEventListener("click", () => {
 elements["copy-thread"].addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(store.snapshot.threadId);
-    elements["copy-thread"].textContent = "Copied";
-    window.setTimeout(() => {
-      elements["copy-thread"].textContent = "Copy";
-    }, 1400);
+    showNotice("线程 ID 已复制");
   } catch {
-    showNotice("Clipboard access was unavailable.");
+    showNotice("无法复制线程 ID。");
   }
 });
 
 for (const card of document.querySelectorAll("[data-role]")) {
-  card.addEventListener("click", () => selectNode(card.dataset.role));
+  card.addEventListener("click", () => selectNode(card.dataset.role, card));
 }
 
 for (const button of document.querySelectorAll("[data-inspector-tab]")) {
@@ -615,11 +654,31 @@ for (const button of document.querySelectorAll("[data-bottom-tab]")) {
   });
 }
 
-elements["collapse-bottom"].addEventListener("click", () => {
-  const panel = document.querySelector(".bottom-panel");
-  const collapsed = panel.classList.toggle("collapsed");
-  elements["collapse-bottom"].textContent = collapsed ? "Expand" : "Collapse";
-  elements["collapse-bottom"].setAttribute("aria-expanded", String(!collapsed));
+elements["records-collapse"].addEventListener("click", () => {
+  const collapsed = elements["run-records"].classList.toggle("collapsed");
+  elements["records-collapse"].textContent = collapsed
+    ? "展开运行记录"
+    : "收起运行记录";
+  elements["records-collapse"].setAttribute("aria-expanded", String(!collapsed));
+});
+
+elements["event-search"].addEventListener("input", (event) => {
+  eventSearch = event.target.value;
+  renderEvents(store.snapshot);
+});
+
+elements["event-status-filter"].addEventListener("change", (event) => {
+  eventStatusFilter = event.target.value;
+  renderEvents(store.snapshot);
+});
+
+elements["close-inspector"].addEventListener("click", closeInspector);
+elements["inspector-backdrop"].addEventListener("click", closeInspector);
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements["inspector-drawer"].classList.contains("open")) {
+    closeInspector();
+  }
 });
 
 elements["dismiss-notice"].addEventListener("click", () => {

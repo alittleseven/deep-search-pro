@@ -110,6 +110,35 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         assert symbol in script
 
 
+def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:
+    html = (WEB_ROOT / "trace.html").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "trace.css").read_text(encoding="utf-8")
+
+    for element_id in (
+        "run-title",
+        "task-input",
+        "run-button",
+        "role-summary",
+        "execution-graph",
+        "graph-edges",
+        "graph-empty",
+        "inspector-drawer",
+        "inspector-body",
+        "records-collapse",
+        "events-list",
+        "final-report",
+        "files-list",
+        "raw-events",
+    ):
+        assert f'id="{element_id}"' in html
+
+    assert "overflow-y: auto" in css
+    assert 'data-bottom-tab="events"' in html
+    assert 'data-bottom-tab="report"' in html
+    assert 'data-bottom-tab="files"' in html
+    assert 'data-bottom-tab="raw"' in html
+
+
 def test_upload_completes_before_task_submission(monkeypatch, tmp_path) -> None:
     executed = threading.Event()
     observation = {}
