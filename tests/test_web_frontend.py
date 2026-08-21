@@ -80,6 +80,36 @@ def test_frontend_uses_no_external_runtime_or_html_injection_sink() -> None:
     assert run_client.index("await uploadFiles") < run_client.index("await startTask")
 
 
+def test_chat_page_exposes_complete_question_workflow() -> None:
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+
+    for element_id in (
+        "session-list",
+        "new-session",
+        "session-search",
+        "messages",
+        "empty-state",
+        "task-input",
+        "file-input",
+        "queued-files",
+        "send-button",
+        "trace-link",
+        "connection-label",
+        "notice",
+    ):
+        assert f'id="{element_id}"' in html
+
+    for symbol in (
+        "RunClient",
+        "SessionRepository",
+        "renderMarkdown",
+        "downloadUrl",
+        "traceUrl",
+    ):
+        assert symbol in script
+
+
 def test_upload_completes_before_task_submission(monkeypatch, tmp_path) -> None:
     executed = threading.Event()
     observation = {}
