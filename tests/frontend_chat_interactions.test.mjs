@@ -5,12 +5,17 @@ import * as interactions from "../web/chat-interactions.js";
 
 const {
   createFrameScheduler,
+  createRenderBatch,
   initialScrollIntent,
   isExplicitScrollIntent,
+  isAtBottom,
   isNearBottom,
+  queueRenderBatch,
   reduceScrollIntent,
+  resetRenderBatch,
   shouldFollowNewContent,
   shouldSubmitOnEnter,
+  takeRenderBatch,
 } = interactions;
 
 test("plain Enter submits while Shift+Enter keeps a newline", () => {
@@ -47,8 +52,29 @@ test("programmatic smooth scrolling keeps following through intermediate scroll 
   });
   assert.equal(shouldFollowNewContent(state, true), true);
 
-  state = reduceScrollIntent(state, { type: "scroll", nearBottom: true });
+  state = reduceScrollIntent(state, { type: "scroll", nearBottom: true, atBottom: true });
   assert.deepEqual(state, initialScrollIntent());
+});
+
+test("near-bottom threshold does not complete programmatic scrolling before exact bottom", () => {
+  assert.equal(typeof isAtBottom, "function");
+  assert.equal(isNearBottom({ scrollTop: 484, clientHeight: 400, scrollHeight: 980 }), true);
+  assert.equal(isAtBottom({ scrollTop: 484, clientHeight: 400, scrollHeight: 980 }), false);
+  assert.equal(isAtBottom({ scrollTop: 580, clientHeight: 400, scrollHeight: 980 }), true);
+
+  let state = reduceScrollIntent(initialScrollIntent(), { type: "programmatic-start" });
+  state = reduceScrollIntent(state, {
+    type: "scroll",
+    nearBottom: true,
+    atBottom: false,
+  });
+  assert.equal(state.programmatic, true);
+  assert.equal(shouldFollowNewContent(state, true), true);
+
+  assert.deepEqual(
+    reduceScrollIntent(state, { type: "scroll", nearBottom: true, atBottom: true }),
+    initialScrollIntent(),
+  );
 });
 
 test("explicit user scrolling cancels programmatic follow until input settles", () => {
@@ -124,4 +150,60 @@ test("frame scheduler cancels superseded and explicitly abandoned callbacks", ()
   scheduler.cancel();
   assert.deepEqual(cancelled, [1, 3]);
   assert.deepEqual(observed, ["latest"]);
+});
+
+test("render batches keep the first anchor and accumulated content change", () => {
+  assert.equal(typeof createRenderBatch, "function");
+  let batch = createRenderBatch();
+  batch = queueRenderBatch(batch, { scrollTop: 420, contentChanged: true });
+  batch = queueRenderBatch(batch, { scrollTop: 860, contentChanged: false });
+
+  assert.deepEqual(takeRenderBatch(batch), {
+    anchor: 420,
+    contentChanged: true,
+    remaining: createRenderBatch(),
+  });
+});
+
+test("generated scroll between rapid renders does not discard pending content", () => {
+  let batch = queueRenderBatch(createRenderBatch(), {
+    scrollTop: 420,
+    contentChanged: true,
+  });
+  let scrollIntent = reduceScrollIntent(initialScrollIntent(), {
+    type: "user-start",
+    nearBottom: false,
+  });
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "user-end",
+    nearBottom: false,
+  });
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "scroll",
+    nearBottom: true,
+    atBottom: true,
+  });
+  batch = queueRenderBatch(batch, { scrollTop: 860, contentChanged: false });
+
+  assert.equal(scrollIntent.followLatest, false);
+  assert.deepEqual(takeRenderBatch(batch), {
+    anchor: 420,
+    contentChanged: true,
+    remaining: createRenderBatch(),
+  });
+});
+
+test("explicit cancellation discards pending render anchor and content", () => {
+  let batch = queueRenderBatch(createRenderBatch(), {
+    scrollTop: 420,
+    contentChanged: true,
+  });
+  assert.deepEqual(resetRenderBatch(batch), createRenderBatch());
+});
+
+test("reset clears active user intent after blur or session reset", () => {
+  let state = reduceScrollIntent(initialScrollIntent(), { type: "programmatic-start" });
+  state = reduceScrollIntent(state, { type: "user-start", nearBottom: false });
+  assert.equal(state.userScrolling, true);
+  assert.deepEqual(reduceScrollIntent(state, { type: "reset" }), initialScrollIntent());
 });

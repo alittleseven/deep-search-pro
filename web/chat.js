@@ -1,12 +1,17 @@
 import { downloadUrl } from "./api.js?v=20260824-1";
 import {
   createFrameScheduler,
+  createRenderBatch,
   initialScrollIntent,
   isExplicitScrollIntent,
+  isAtBottom,
   isNearBottom,
+  queueRenderBatch,
   reduceScrollIntent,
+  resetRenderBatch,
   shouldFollowNewContent,
   shouldSubmitOnEnter,
+  takeRenderBatch,
 } from "./chat-interactions.js?v=20260824-1";
 import { renderMarkdown } from "./markdown.js?v=20260824-1";
 import { RunClient } from "./run-client.js?v=20260824-1";
@@ -52,7 +57,7 @@ let sessionFilter = "";
 let noticeTimer = null;
 let lastSessionSignature = "";
 let lastEventCount = 0;
-let pendingConversationChange = false;
+let conversationBatch = createRenderBatch();
 let scrollIntent = initialScrollIntent();
 
 const activeScrollInputs = new Set();
@@ -89,17 +94,18 @@ function updateLatestControl() {
   scrollIntent = reduceScrollIntent(scrollIntent, {
     type: "scroll",
     nearBottom: isNearBottom(elements.messages),
+    atBottom: isAtBottom(elements.messages),
   });
   renderLatestControl();
 }
 
-function cancelConversationRender() {
+function discardConversationBatch() {
   conversationFrames.cancel();
-  pendingConversationChange = false;
+  conversationBatch = resetRenderBatch(conversationBatch);
 }
 
 function resetScrollIntent() {
-  cancelConversationRender();
+  discardConversationBatch();
   wheelFrames.cancel();
   activeScrollInputs.clear();
   scrollIntent = reduceScrollIntent(scrollIntent, { type: "reset" });
@@ -108,7 +114,7 @@ function resetScrollIntent() {
 
 function beginUserScroll(source) {
   activeScrollInputs.add(source);
-  cancelConversationRender();
+  discardConversationBatch();
   scrollIntent = reduceScrollIntent(scrollIntent, {
     type: "user-start",
     nearBottom: isNearBottom(elements.messages),
@@ -125,13 +131,23 @@ function finishUserScroll(source) {
   renderLatestControl();
 }
 
+function settleUserScroll() {
+  wheelFrames.cancel();
+  if (!activeScrollInputs.size && !scrollIntent.userScrolling) return;
+  discardConversationBatch();
+  activeScrollInputs.clear();
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "user-end",
+    nearBottom: isNearBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
 function handleMessageScroll() {
-  if (!scrollIntent.programmatic) cancelConversationRender();
   updateLatestControl();
 }
 
 function scrollToLatest({ smooth = false } = {}) {
-  cancelConversationRender();
   scrollIntent = reduceScrollIntent(scrollIntent, { type: "programmatic-start" });
   renderLatestControl();
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -139,6 +155,7 @@ function scrollToLatest({ smooth = false } = {}) {
     top: elements.messages.scrollHeight,
     behavior: smooth && !reducedMotion ? "smooth" : "auto",
   });
+  updateLatestControl();
 }
 
 function shortId(value) {
@@ -338,19 +355,21 @@ function renderConversation(snapshot) {
     fragment.append(assistant);
   }
 
-  const previousScrollTop = elements.messages.scrollTop;
-  pendingConversationChange = pendingConversationChange
-    || snapshot.events.length !== lastEventCount
+  const contentChanged = snapshot.events.length !== lastEventCount
     || pendingQuery
     || isTerminalStatus(snapshot.taskStatus);
+  conversationBatch = queueRenderBatch(conversationBatch, {
+    scrollTop: elements.messages.scrollTop,
+    contentChanged,
+  });
   elements.conversation.replaceChildren(fragment);
   conversationFrames.schedule(() => {
-    const contentChanged = pendingConversationChange;
-    pendingConversationChange = false;
-    if (shouldFollowNewContent(scrollIntent, contentChanged)) {
+    const batch = takeRenderBatch(conversationBatch);
+    conversationBatch = batch.remaining;
+    if (shouldFollowNewContent(scrollIntent, batch.contentChanged)) {
       scrollToLatest();
-    } else if (!scrollIntent.userScrolling) {
-      elements.messages.scrollTop = previousScrollTop;
+    } else if (!scrollIntent.userScrolling && batch.anchor !== null) {
+      elements.messages.scrollTop = batch.anchor;
     }
     updateLatestControl();
   });
@@ -587,6 +606,7 @@ window.addEventListener("pointercancel", (event) => {
 }, { passive: true });
 window.addEventListener("touchend", () => finishUserScroll("touch"), { passive: true });
 window.addEventListener("touchcancel", () => finishUserScroll("touch"), { passive: true });
+window.addEventListener("blur", settleUserScroll);
 
 for (const eventName of ["dragenter", "dragover"]) {
   elements.composer.addEventListener(eventName, (event) => {

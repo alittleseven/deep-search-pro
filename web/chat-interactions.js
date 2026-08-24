@@ -7,6 +7,34 @@ export function isNearBottom(metrics, threshold = 96) {
   return remaining <= threshold;
 }
 
+export function isAtBottom(metrics, tolerance = 2) {
+  const remaining = metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop;
+  return remaining <= tolerance;
+}
+
+export function createRenderBatch() {
+  return { anchor: null, contentChanged: false };
+}
+
+export function queueRenderBatch(batch, { scrollTop, contentChanged }) {
+  return {
+    anchor: batch.anchor === null ? scrollTop : batch.anchor,
+    contentChanged: batch.contentChanged || Boolean(contentChanged),
+  };
+}
+
+export function resetRenderBatch() {
+  return createRenderBatch();
+}
+
+export function takeRenderBatch(batch) {
+  return {
+    anchor: batch.anchor,
+    contentChanged: batch.contentChanged,
+    remaining: createRenderBatch(),
+  };
+}
+
 export function initialScrollIntent() {
   return {
     followLatest: true,
@@ -28,6 +56,7 @@ export function reduceScrollIntent(state, action) {
   }
 
   const nearBottom = Boolean(action.nearBottom);
+  const atBottom = Boolean(action.atBottom);
   if (action.type === "user-start") {
     return {
       followLatest: false,
@@ -46,11 +75,11 @@ export function reduceScrollIntent(state, action) {
   }
   if (action.type === "scroll") {
     if (state.programmatic) {
-      return nearBottom
+      return atBottom
         ? initialScrollIntent()
         : {
             followLatest: true,
-            nearBottom: false,
+            nearBottom,
             programmatic: true,
             userScrolling: false,
           };
@@ -64,7 +93,7 @@ export function reduceScrollIntent(state, action) {
       };
     }
     return {
-      followLatest: nearBottom,
+      followLatest: state.followLatest,
       nearBottom,
       programmatic: false,
       userScrolling: false,

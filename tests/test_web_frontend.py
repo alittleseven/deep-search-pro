@@ -122,9 +122,13 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "traceUrl",
         "shouldSubmitOnEnter",
         "isNearBottom",
+        "isAtBottom",
         "reduceScrollIntent",
         "shouldFollowNewContent",
         "createFrameScheduler",
+        "createRenderBatch",
+        "queueRenderBatch",
+        "takeRenderBatch",
         "isExplicitScrollIntent",
         "aria-busy",
     ):
@@ -145,10 +149,17 @@ def test_historical_session_resets_follow_state_before_switching() -> None:
 def test_chat_scroll_intent_wiring_cancels_user_and_stale_render_scrolls() -> None:
     script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
 
-    for event_name in ("wheel", "touchstart", "pointerdown", "keyup", "pointerup"):
+    for event_name in ("wheel", "touchstart", "pointerdown", "keyup", "pointerup", "blur"):
         assert f'"{event_name}"' in script
     assert "conversationFrames.schedule" in script
     assert "conversationFrames.cancel" in script
+    assert "conversationBatch = queueRenderBatch" in script
+
+    scroll_start = script.index("function handleMessageScroll()")
+    scroll_end = script.index("function scrollToLatest", scroll_start)
+    handle_scroll = script[scroll_start:scroll_end]
+    assert "discardConversationBatch" not in handle_scroll
+    assert "conversationFrames.cancel" not in handle_scroll
 
 
 def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:
