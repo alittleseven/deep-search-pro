@@ -1,12 +1,16 @@
-import { downloadUrl } from "./api.js?v=20260821-5";
-import { renderMarkdown } from "./markdown.js?v=20260821-5";
-import { RunClient } from "./run-client.js?v=20260821-5";
+import { downloadUrl } from "./api.js?v=20260824-1";
+import {
+  isNearBottom,
+  shouldSubmitOnEnter,
+} from "./chat-interactions.js?v=20260824-1";
+import { renderMarkdown } from "./markdown.js?v=20260824-1";
+import { RunClient } from "./run-client.js?v=20260824-1";
 import {
   createSessionRecord,
   SessionRepository,
   traceUrl,
-} from "./session.js?v=20260821-5";
-import { ConsoleStore, isTerminalStatus, ROLE_DEFINITIONS } from "./state.js?v=20260821-5";
+} from "./session.js?v=20260824-1";
+import { ConsoleStore, isTerminalStatus, ROLE_DEFINITIONS } from "./state.js?v=20260824-1";
 
 const elements = Object.fromEntries(
   [...document.querySelectorAll("[id]")].map((element) => [element.id, element]),
@@ -43,6 +47,7 @@ let sessionFilter = "";
 let noticeTimer = null;
 let lastSessionSignature = "";
 let lastEventCount = 0;
+let followLatest = true;
 
 function makeElement(tag, className = "", text) {
   const element = document.createElement(tag);
@@ -57,6 +62,22 @@ function statusLabel(status) {
 
 function isBusy(status) {
   return ["uploading", "starting", "restoring", "running"].includes(status);
+}
+
+function updateLatestControl() {
+  const nearBottom = isNearBottom(elements.messages);
+  followLatest = nearBottom;
+  elements["scroll-to-latest"].classList.toggle("hidden", nearBottom);
+}
+
+function scrollToLatest({ smooth = false } = {}) {
+  followLatest = true;
+  elements["scroll-to-latest"].classList.add("hidden");
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  elements.messages.scrollTo({
+    top: elements.messages.scrollHeight,
+    behavior: smooth && !reducedMotion ? "smooth" : "auto",
+  });
 }
 
 function shortId(value) {
@@ -113,9 +134,11 @@ function renderHeader(snapshot) {
 
   elements["trace-link"].href = traceUrl(snapshot.threadId, snapshot.runId);
   elements["trace-link"].setAttribute("aria-disabled", String(!snapshot.runId));
-  elements["send-button"].disabled = isBusy(snapshot.taskStatus)
-    || !elements["task-input"].value.trim();
-  elements["attach-button"].disabled = isBusy(snapshot.taskStatus);
+  const busy = isBusy(snapshot.taskStatus);
+  elements["send-button"].disabled = busy || !elements["task-input"].value.trim();
+  elements["send-button"].dataset.busy = String(busy);
+  elements["send-button"].setAttribute("aria-busy", String(busy));
+  elements["attach-button"].disabled = busy;
 }
 
 function renderSessions(snapshot) {
@@ -254,15 +277,20 @@ function renderConversation(snapshot) {
     fragment.append(assistant);
   }
 
-  const shouldScroll = snapshot.events.length !== lastEventCount
+  const previousScrollTop = elements.messages.scrollTop;
+  const contentChanged = snapshot.events.length !== lastEventCount
     || pendingQuery
     || isTerminalStatus(snapshot.taskStatus);
+  const shouldScroll = contentChanged && followLatest;
   elements.conversation.replaceChildren(fragment);
-  if (shouldScroll) {
-    requestAnimationFrame(() => {
-      elements.messages.scrollTop = elements.messages.scrollHeight;
-    });
-  }
+  requestAnimationFrame(() => {
+    if (shouldScroll) {
+      scrollToLatest();
+    } else {
+      elements.messages.scrollTop = previousScrollTop;
+      updateLatestControl();
+    }
+  });
   lastEventCount = snapshot.events.length;
 }
 
@@ -330,6 +358,7 @@ async function submitQuestion(event) {
   if (!query || isBusy(store.snapshot.taskStatus)) return;
 
   pendingQuery = query;
+  followLatest = true;
   render(store.snapshot);
   try {
     const response = await runClient.start({
@@ -369,6 +398,7 @@ function newSession() {
   pendingQuery = "";
   queuedFiles = [];
   lastSessionSignature = "";
+  followLatest = true;
   store.newSession();
   history.replaceState(null, "", "/");
   elements["task-input"].value = "";
@@ -387,6 +417,7 @@ async function activateSession(session) {
   queuedFiles = [];
   lastSessionSignature = "";
   store.newSession();
+  followLatest = true;
   store.patch({
     threadId: session.threadId,
     runId: session.runId,
@@ -434,10 +465,13 @@ elements["task-input"].addEventListener("input", (event) => {
   renderHeader(store.snapshot);
 });
 elements["task-input"].addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    elements.composer.requestSubmit();
-  }
+  if (!shouldSubmitOnEnter(event)) return;
+  event.preventDefault();
+  elements.composer.requestSubmit();
+});
+elements.messages.addEventListener("scroll", updateLatestControl, { passive: true });
+elements["scroll-to-latest"].addEventListener("click", () => {
+  scrollToLatest({ smooth: true });
 });
 elements["trace-link"].addEventListener("click", (event) => {
   if (elements["trace-link"].getAttribute("aria-disabled") === "true") {

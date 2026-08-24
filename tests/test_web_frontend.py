@@ -21,6 +21,7 @@ def test_chat_and_trace_pages_and_static_assets_are_available() -> None:
                 "/static/styles.css",
                 "/static/trace.css",
                 "/static/chat.js",
+                "/static/chat-interactions.js",
                 "/static/app.js",
                 "/static/session.js",
                 "/static/markdown.js",
@@ -101,6 +102,7 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "new-session",
         "session-search",
         "messages",
+        "scroll-to-latest",
         "empty-state",
         "task-input",
         "file-input",
@@ -118,6 +120,9 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "renderMarkdown",
         "downloadUrl",
         "traceUrl",
+        "shouldSubmitOnEnter",
+        "isNearBottom",
+        "aria-busy",
     ):
         assert symbol in script
 
