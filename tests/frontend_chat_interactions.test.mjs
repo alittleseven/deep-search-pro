@@ -14,6 +14,7 @@ const {
   reduceScrollIntent,
   resetRenderBatch,
   shouldFollowNewContent,
+  shouldRestoreRenderAnchor,
   shouldSubmitOnEnter,
   takeRenderBatch,
 } = interactions;
@@ -26,6 +27,10 @@ test("plain Enter submits while Shift+Enter keeps a newline", () => {
 
 test("IME composition never submits the message", () => {
   assert.equal(shouldSubmitOnEnter({ key: "Enter", isComposing: true }), false);
+});
+
+test("WebKit IME key events never submit the message", () => {
+  assert.equal(shouldSubmitOnEnter({ key: "Enter", keyCode: 229 }), false);
 });
 
 test("near-bottom detection allows a small reading threshold", () => {
@@ -75,6 +80,28 @@ test("near-bottom threshold does not complete programmatic scrolling before exac
     reduceScrollIntent(state, { type: "scroll", nearBottom: true, atBottom: true }),
     initialScrollIntent(),
   );
+});
+
+test("unchanged renders do not restore anchors during programmatic scrolling", () => {
+  assert.equal(typeof shouldRestoreRenderAnchor, "function");
+  const state = reduceScrollIntent(initialScrollIntent(), { type: "programmatic-start" });
+
+  assert.equal(shouldFollowNewContent(state, false), false);
+  assert.equal(shouldRestoreRenderAnchor(state, 420), false);
+});
+
+test("settled non-programmatic renders restore an available anchor", () => {
+  assert.equal(shouldRestoreRenderAnchor(initialScrollIntent(), 420), true);
+  assert.equal(shouldRestoreRenderAnchor(initialScrollIntent(), null), false);
+});
+
+test("active user scrolling never restores a render anchor", () => {
+  const state = reduceScrollIntent(initialScrollIntent(), {
+    type: "user-start",
+    nearBottom: false,
+  });
+
+  assert.equal(shouldRestoreRenderAnchor(state, 420), false);
 });
 
 test("explicit user scrolling cancels programmatic follow until input settles", () => {

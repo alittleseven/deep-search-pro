@@ -125,6 +125,7 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "isAtBottom",
         "reduceScrollIntent",
         "shouldFollowNewContent",
+        "shouldRestoreRenderAnchor",
         "createFrameScheduler",
         "createRenderBatch",
         "queueRenderBatch",

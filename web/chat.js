@@ -10,6 +10,7 @@ import {
   reduceScrollIntent,
   resetRenderBatch,
   shouldFollowNewContent,
+  shouldRestoreRenderAnchor,
   shouldSubmitOnEnter,
   takeRenderBatch,
 } from "./chat-interactions.js?v=20260824-1";
@@ -368,7 +369,7 @@ function renderConversation(snapshot) {
     conversationBatch = batch.remaining;
     if (shouldFollowNewContent(scrollIntent, batch.contentChanged)) {
       scrollToLatest();
-    } else if (!scrollIntent.userScrolling && batch.anchor !== null) {
+    } else if (shouldRestoreRenderAnchor(scrollIntent, batch.anchor)) {
       elements.messages.scrollTop = batch.anchor;
     }
     updateLatestControl();

@@ -1,5 +1,8 @@
 export function shouldSubmitOnEnter(event) {
-  return event.key === "Enter" && !event.shiftKey && !event.isComposing;
+  return event.key === "Enter"
+    && !event.shiftKey
+    && !event.isComposing
+    && event.keyCode !== 229;
 }
 
 export function isNearBottom(metrics, threshold = 96) {
@@ -104,6 +107,13 @@ export function reduceScrollIntent(state, action) {
 
 export function shouldFollowNewContent(state, contentChanged) {
   return Boolean(contentChanged && state.followLatest && !state.userScrolling);
+}
+
+export function shouldRestoreRenderAnchor(state, anchor) {
+  return anchor !== null
+    && anchor !== undefined
+    && !state.programmatic
+    && !state.userScrolling;
 }
 
 export function isExplicitScrollIntent(event) {
