@@ -37,6 +37,9 @@ env/
 # ========================
 .claude/
 
+# Codex isolated worktrees
+.worktrees/
+
 # 测试临时文件
 # ========================
 tools/test_session_*/
