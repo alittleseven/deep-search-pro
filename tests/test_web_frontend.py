@@ -127,6 +127,17 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         assert symbol in script
 
 
+def test_historical_session_resets_follow_state_before_switching() -> None:
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+    activate_start = script.index("async function activateSession(session)")
+    activate_end = script.index("async function restoreInitialSession()", activate_start)
+    activate_session = script[activate_start:activate_end]
+
+    assert activate_session.index("followLatest = true;") < activate_session.index(
+        "store.newSession();",
+    )
+
+
 def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:
     html = (WEB_ROOT / "trace.html").read_text(encoding="utf-8")
     css = (WEB_ROOT / "trace.css").read_text(encoding="utf-8")

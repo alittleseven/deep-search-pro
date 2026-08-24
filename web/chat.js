@@ -416,8 +416,8 @@ async function activateSession(session) {
   pendingQuery = "";
   queuedFiles = [];
   lastSessionSignature = "";
-  store.newSession();
   followLatest = true;
+  store.newSession();
   store.patch({
     threadId: session.threadId,
     runId: session.runId,
