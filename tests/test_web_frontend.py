@@ -122,6 +122,10 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "traceUrl",
         "shouldSubmitOnEnter",
         "isNearBottom",
+        "reduceScrollIntent",
+        "shouldFollowNewContent",
+        "createFrameScheduler",
+        "isExplicitScrollIntent",
         "aria-busy",
     ):
         assert symbol in script
@@ -133,9 +137,18 @@ def test_historical_session_resets_follow_state_before_switching() -> None:
     activate_end = script.index("async function restoreInitialSession()", activate_start)
     activate_session = script[activate_start:activate_end]
 
-    assert activate_session.index("followLatest = true;") < activate_session.index(
+    assert activate_session.index("resetScrollIntent();") < activate_session.index(
         "store.newSession();",
     )
+
+
+def test_chat_scroll_intent_wiring_cancels_user_and_stale_render_scrolls() -> None:
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+
+    for event_name in ("wheel", "touchstart", "pointerdown", "keyup", "pointerup"):
+        assert f'"{event_name}"' in script
+    assert "conversationFrames.schedule" in script
+    assert "conversationFrames.cancel" in script
 
 
 def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:

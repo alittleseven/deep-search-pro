@@ -1,6 +1,11 @@
 import { downloadUrl } from "./api.js?v=20260824-1";
 import {
+  createFrameScheduler,
+  initialScrollIntent,
+  isExplicitScrollIntent,
   isNearBottom,
+  reduceScrollIntent,
+  shouldFollowNewContent,
   shouldSubmitOnEnter,
 } from "./chat-interactions.js?v=20260824-1";
 import { renderMarkdown } from "./markdown.js?v=20260824-1";
@@ -47,7 +52,18 @@ let sessionFilter = "";
 let noticeTimer = null;
 let lastSessionSignature = "";
 let lastEventCount = 0;
-let followLatest = true;
+let pendingConversationChange = false;
+let scrollIntent = initialScrollIntent();
+
+const activeScrollInputs = new Set();
+const conversationFrames = createFrameScheduler({
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+});
+const wheelFrames = createFrameScheduler({
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+});
 
 function makeElement(tag, className = "", text) {
   const element = document.createElement(tag);
@@ -64,15 +80,60 @@ function isBusy(status) {
   return ["uploading", "starting", "restoring", "running"].includes(status);
 }
 
+function renderLatestControl() {
+  const hidden = scrollIntent.programmatic || scrollIntent.nearBottom;
+  elements["scroll-to-latest"].classList.toggle("hidden", hidden);
+}
+
 function updateLatestControl() {
-  const nearBottom = isNearBottom(elements.messages);
-  followLatest = nearBottom;
-  elements["scroll-to-latest"].classList.toggle("hidden", nearBottom);
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "scroll",
+    nearBottom: isNearBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
+function cancelConversationRender() {
+  conversationFrames.cancel();
+  pendingConversationChange = false;
+}
+
+function resetScrollIntent() {
+  cancelConversationRender();
+  wheelFrames.cancel();
+  activeScrollInputs.clear();
+  scrollIntent = reduceScrollIntent(scrollIntent, { type: "reset" });
+  renderLatestControl();
+}
+
+function beginUserScroll(source) {
+  activeScrollInputs.add(source);
+  cancelConversationRender();
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "user-start",
+    nearBottom: isNearBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
+function finishUserScroll(source) {
+  if (!activeScrollInputs.delete(source) || activeScrollInputs.size) return;
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "user-end",
+    nearBottom: isNearBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
+function handleMessageScroll() {
+  if (!scrollIntent.programmatic) cancelConversationRender();
+  updateLatestControl();
 }
 
 function scrollToLatest({ smooth = false } = {}) {
-  followLatest = true;
-  elements["scroll-to-latest"].classList.add("hidden");
+  cancelConversationRender();
+  scrollIntent = reduceScrollIntent(scrollIntent, { type: "programmatic-start" });
+  renderLatestControl();
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   elements.messages.scrollTo({
     top: elements.messages.scrollHeight,
@@ -278,18 +339,20 @@ function renderConversation(snapshot) {
   }
 
   const previousScrollTop = elements.messages.scrollTop;
-  const contentChanged = snapshot.events.length !== lastEventCount
+  pendingConversationChange = pendingConversationChange
+    || snapshot.events.length !== lastEventCount
     || pendingQuery
     || isTerminalStatus(snapshot.taskStatus);
-  const shouldScroll = contentChanged && followLatest;
   elements.conversation.replaceChildren(fragment);
-  requestAnimationFrame(() => {
-    if (shouldScroll) {
+  conversationFrames.schedule(() => {
+    const contentChanged = pendingConversationChange;
+    pendingConversationChange = false;
+    if (shouldFollowNewContent(scrollIntent, contentChanged)) {
       scrollToLatest();
-    } else {
+    } else if (!scrollIntent.userScrolling) {
       elements.messages.scrollTop = previousScrollTop;
-      updateLatestControl();
     }
+    updateLatestControl();
   });
   lastEventCount = snapshot.events.length;
 }
@@ -358,7 +421,7 @@ async function submitQuestion(event) {
   if (!query || isBusy(store.snapshot.taskStatus)) return;
 
   pendingQuery = query;
-  followLatest = true;
+  resetScrollIntent();
   render(store.snapshot);
   try {
     const response = await runClient.start({
@@ -398,7 +461,7 @@ function newSession() {
   pendingQuery = "";
   queuedFiles = [];
   lastSessionSignature = "";
-  followLatest = true;
+  resetScrollIntent();
   store.newSession();
   history.replaceState(null, "", "/");
   elements["task-input"].value = "";
@@ -416,7 +479,7 @@ async function activateSession(session) {
   pendingQuery = "";
   queuedFiles = [];
   lastSessionSignature = "";
-  followLatest = true;
+  resetScrollIntent();
   store.newSession();
   store.patch({
     threadId: session.threadId,
@@ -469,7 +532,19 @@ elements["task-input"].addEventListener("keydown", (event) => {
   event.preventDefault();
   elements.composer.requestSubmit();
 });
-elements.messages.addEventListener("scroll", updateLatestControl, { passive: true });
+elements.messages.addEventListener("scroll", handleMessageScroll, { passive: true });
+elements.messages.addEventListener("wheel", (event) => {
+  if (!isExplicitScrollIntent(event)) return;
+  beginUserScroll("wheel");
+  wheelFrames.schedule(() => finishUserScroll("wheel"));
+}, { passive: true });
+elements.messages.addEventListener("touchstart", (event) => {
+  if (isExplicitScrollIntent(event)) beginUserScroll("touch");
+}, { passive: true });
+elements.messages.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch" || !isExplicitScrollIntent(event)) return;
+  beginUserScroll(`pointer:${event.pointerId}`);
+}, { passive: true });
 elements["scroll-to-latest"].addEventListener("click", () => {
   scrollToLatest({ smooth: true });
 });
@@ -495,11 +570,23 @@ elements["close-sidebar"].addEventListener("click", closeSidebar);
 elements["sidebar-backdrop"].addEventListener("click", closeSidebar);
 
 window.addEventListener("keydown", (event) => {
+  if (isExplicitScrollIntent(event)) beginUserScroll(`keyboard:${event.key}`);
   if (event.key === "Escape" && elements.sidebar.classList.contains("open")) {
     closeSidebar();
     elements["open-sidebar"].focus();
   }
 });
+window.addEventListener("keyup", (event) => {
+  finishUserScroll(`keyboard:${event.key}`);
+});
+window.addEventListener("pointerup", (event) => {
+  finishUserScroll(`pointer:${event.pointerId}`);
+}, { passive: true });
+window.addEventListener("pointercancel", (event) => {
+  finishUserScroll(`pointer:${event.pointerId}`);
+}, { passive: true });
+window.addEventListener("touchend", () => finishUserScroll("touch"), { passive: true });
+window.addEventListener("touchcancel", () => finishUserScroll("touch"), { passive: true });
 
 for (const eventName of ["dragenter", "dragover"]) {
   elements.composer.addEventListener(eventName, (event) => {
