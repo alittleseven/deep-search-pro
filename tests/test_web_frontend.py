@@ -218,6 +218,12 @@ def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
     assert 'aria-modal="true"' in pages
     assert ":focus-visible" in styles
     assert "prefers-reduced-motion" in styles
+    assert "--radius-panel: 8px" in styles
+    assert "--radius-control: 10px" in styles
+    assert "--radius-primary: 12px" in styles
+    assert "--motion-fast: 160ms" in styles
+    assert ".scroll-to-latest" in styles
+    assert '.send-button[data-busy="true"]' in styles
     assert "@media (max-width: 900px)" in styles
     assert "font-size: 8px" not in styles
     assert "font-size: 9px" not in styles
