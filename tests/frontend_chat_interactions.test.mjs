@@ -90,6 +90,41 @@ test("unchanged renders do not restore anchors during programmatic scrolling", (
   assert.equal(shouldRestoreRenderAnchor(state, 420), false);
 });
 
+test("settled programmatic-origin batches do not restore unchanged anchors", () => {
+  let batch = queueRenderBatch(createRenderBatch(), {
+    scrollTop: 420,
+    contentChanged: false,
+    programmatic: true,
+  });
+  batch = queueRenderBatch(batch, {
+    scrollTop: 860,
+    contentChanged: false,
+    programmatic: true,
+  });
+  let state = reduceScrollIntent(initialScrollIntent(), { type: "programmatic-start" });
+  state = reduceScrollIntent(state, { type: "scroll", nearBottom: true, atBottom: true });
+
+  assert.equal(batch.programmatic, true);
+  assert.equal(shouldRestoreRenderAnchor(
+    state,
+    batch.anchor,
+    batch.contentChanged,
+    batch.programmatic,
+  ), false);
+});
+
+test("changed programmatic-origin batches still follow latest after settling", () => {
+  const batch = queueRenderBatch(createRenderBatch(), {
+    scrollTop: 420,
+    contentChanged: true,
+    programmatic: true,
+  });
+  let state = reduceScrollIntent(initialScrollIntent(), { type: "programmatic-start" });
+  state = reduceScrollIntent(state, { type: "scroll", nearBottom: true, atBottom: true });
+
+  assert.equal(shouldFollowNewContent(state, batch.contentChanged), true);
+});
+
 test("settled non-programmatic renders restore an available anchor", () => {
   assert.equal(shouldRestoreRenderAnchor(initialScrollIntent(), 420), true);
   assert.equal(shouldRestoreRenderAnchor(initialScrollIntent(), null), false);
@@ -188,6 +223,7 @@ test("render batches keep the first anchor and accumulated content change", () =
   assert.deepEqual(takeRenderBatch(batch), {
     anchor: 420,
     contentChanged: true,
+    programmatic: false,
     remaining: createRenderBatch(),
   });
 });
@@ -216,6 +252,7 @@ test("generated scroll between rapid renders does not discard pending content", 
   assert.deepEqual(takeRenderBatch(batch), {
     anchor: 420,
     contentChanged: true,
+    programmatic: false,
     remaining: createRenderBatch(),
   });
 });

@@ -155,6 +155,8 @@ def test_chat_scroll_intent_wiring_cancels_user_and_stale_render_scrolls() -> No
     assert "conversationFrames.schedule" in script
     assert "conversationFrames.cancel" in script
     assert "conversationBatch = queueRenderBatch" in script
+    assert "programmatic: scrollIntent.programmatic" in script
+    assert "batch.programmatic" in script
 
     scroll_start = script.index("function handleMessageScroll()")
     scroll_end = script.index("function scrollToLatest", scroll_start)

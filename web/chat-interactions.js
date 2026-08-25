@@ -16,13 +16,14 @@ export function isAtBottom(metrics, tolerance = 2) {
 }
 
 export function createRenderBatch() {
-  return { anchor: null, contentChanged: false };
+  return { anchor: null, contentChanged: false, programmatic: false };
 }
 
-export function queueRenderBatch(batch, { scrollTop, contentChanged }) {
+export function queueRenderBatch(batch, { scrollTop, contentChanged, programmatic = false }) {
   return {
     anchor: batch.anchor === null ? scrollTop : batch.anchor,
     contentChanged: batch.contentChanged || Boolean(contentChanged),
+    programmatic: batch.anchor === null ? Boolean(programmatic) : batch.programmatic,
   };
 }
 
@@ -34,6 +35,7 @@ export function takeRenderBatch(batch) {
   return {
     anchor: batch.anchor,
     contentChanged: batch.contentChanged,
+    programmatic: batch.programmatic,
     remaining: createRenderBatch(),
   };
 }
@@ -109,11 +111,12 @@ export function shouldFollowNewContent(state, contentChanged) {
   return Boolean(contentChanged && state.followLatest && !state.userScrolling);
 }
 
-export function shouldRestoreRenderAnchor(state, anchor) {
+export function shouldRestoreRenderAnchor(state, anchor, contentChanged = false, programmaticOrigin = false) {
   return anchor !== null
     && anchor !== undefined
     && !state.programmatic
-    && !state.userScrolling;
+    && !state.userScrolling
+    && (contentChanged || !programmaticOrigin);
 }
 
 export function isExplicitScrollIntent(event) {

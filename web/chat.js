@@ -362,6 +362,7 @@ function renderConversation(snapshot) {
   conversationBatch = queueRenderBatch(conversationBatch, {
     scrollTop: elements.messages.scrollTop,
     contentChanged,
+    programmatic: scrollIntent.programmatic,
   });
   elements.conversation.replaceChildren(fragment);
   conversationFrames.schedule(() => {
@@ -369,7 +370,12 @@ function renderConversation(snapshot) {
     conversationBatch = batch.remaining;
     if (shouldFollowNewContent(scrollIntent, batch.contentChanged)) {
       scrollToLatest();
-    } else if (shouldRestoreRenderAnchor(scrollIntent, batch.anchor)) {
+    } else if (shouldRestoreRenderAnchor(
+      scrollIntent,
+      batch.anchor,
+      batch.contentChanged,
+      batch.programmatic,
+    )) {
       elements.messages.scrollTop = batch.anchor;
     }
     updateLatestControl();
