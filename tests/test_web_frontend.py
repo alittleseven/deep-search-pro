@@ -158,6 +158,13 @@ def test_chat_scroll_intent_wiring_cancels_user_and_stale_render_scrolls() -> No
     assert "programmatic: scrollIntent.programmatic" in script
     assert "batch.programmatic" in script
 
+    latest_start = script.index("function scrollToLatest")
+    latest_end = script.index("function shortId", latest_start)
+    latest_scroll = script[latest_start:latest_end]
+    assert latest_scroll.index("discardConversationBatch()") < latest_scroll.index(
+        "scrollIntent = reduceScrollIntent"
+    )
+
     scroll_start = script.index("function handleMessageScroll()")
     scroll_end = script.index("function scrollToLatest", scroll_start)
     handle_scroll = script[scroll_start:scroll_end]

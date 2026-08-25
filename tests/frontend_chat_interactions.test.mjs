@@ -125,6 +125,33 @@ test("changed programmatic-origin batches still follow latest after settling", (
   assert.equal(shouldFollowNewContent(state, batch.contentChanged), true);
 });
 
+test("superseding back-to-latest clears a pending non-programmatic batch", () => {
+  let batch = queueRenderBatch(createRenderBatch(), {
+    scrollTop: 420,
+    contentChanged: false,
+    programmatic: false,
+  });
+  assert.equal(batch.anchor, 420);
+
+  batch = resetRenderBatch(batch);
+  let state = reduceScrollIntent(initialScrollIntent(), { type: "programmatic-start" });
+  state = reduceScrollIntent(state, { type: "scroll", nearBottom: true, atBottom: true });
+  const settledBatch = takeRenderBatch(batch);
+
+  assert.deepEqual(settledBatch, {
+    anchor: null,
+    contentChanged: false,
+    programmatic: false,
+    remaining: createRenderBatch(),
+  });
+  assert.equal(shouldRestoreRenderAnchor(
+    state,
+    settledBatch.anchor,
+    settledBatch.contentChanged,
+    settledBatch.programmatic,
+  ), false);
+});
+
 test("settled non-programmatic renders restore an available anchor", () => {
   assert.equal(shouldRestoreRenderAnchor(initialScrollIntent(), 420), true);
   assert.equal(shouldRestoreRenderAnchor(initialScrollIntent(), null), false);

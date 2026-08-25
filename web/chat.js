@@ -149,6 +149,7 @@ function handleMessageScroll() {
 }
 
 function scrollToLatest({ smooth = false } = {}) {
+  discardConversationBatch();
   scrollIntent = reduceScrollIntent(scrollIntent, { type: "programmatic-start" });
   renderLatestControl();
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
