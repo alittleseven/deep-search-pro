@@ -222,6 +222,14 @@ def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
     assert "--radius-control: 10px" in styles
     assert "--radius-primary: 12px" in styles
     assert "--motion-fast: 160ms" in styles
+    assert "--composer-reserve: 250px" in styles
+    assert "--scroll-latest-offset: 330px" in styles
+    assert "--scroll-latest-offset-mobile: 320px" in styles
+    assert "max-height: 88px" in styles
+    assert ".notice > span" in styles
+    assert "overflow-wrap: anywhere" in styles
+    assert "top: 72px" in styles
+    assert "bottom: auto" in styles
     assert ".scroll-to-latest" in styles
     assert '.send-button[data-busy="true"]' in styles
     assert "@media (max-width: 900px)" in styles

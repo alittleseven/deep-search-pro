@@ -20,6 +20,9 @@
   --radius-primary: 12px;
   --motion-fast: 160ms;
   --motion-standard: 190ms;
+  --composer-reserve: 250px;
+  --scroll-latest-offset: 330px;
+  --scroll-latest-offset-mobile: 320px;
   --content-width: 820px;
   --sans: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
@@ -482,7 +485,7 @@ textarea::placeholder { color: #6f7a78; }
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 42px max(24px, calc((100% - var(--content-width)) / 2)) 190px;
+  padding: 42px max(24px, calc((100% - var(--content-width)) / 2)) var(--composer-reserve);
   scrollbar-gutter: stable;
 }
 
@@ -865,6 +868,9 @@ textarea::placeholder { color: #6f7a78; }
 }
 
 .queued-files {
+  max-height: 88px;
+  padding-right: 2px;
+  overflow-y: auto;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -930,6 +936,12 @@ textarea::placeholder { color: #6f7a78; }
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
+.notice > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
 .notice button {
   min-width: 36px;
   min-height: 36px;
@@ -949,7 +961,7 @@ textarea::placeholder { color: #6f7a78; }
   position: absolute;
   z-index: 7;
   right: max(24px, calc((100% - var(--content-width)) / 2));
-  bottom: 244px;
+  bottom: var(--scroll-latest-offset);
   display: inline-grid;
   width: 38px;
   height: 38px;
@@ -1040,7 +1052,7 @@ textarea::placeholder { color: #6f7a78; }
     justify-content: center;
   }
 
-  .message-stream { padding: 28px 16px 176px; }
+  .message-stream { padding: 28px 16px var(--composer-reserve); }
 
   .composer {
     right: 12px;
@@ -1050,7 +1062,7 @@ textarea::placeholder { color: #6f7a78; }
 
   .scroll-to-latest {
     right: 18px;
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 220px);
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--scroll-latest-offset-mobile));
   }
 
   .user-bubble { max-width: 88%; }
@@ -1076,6 +1088,16 @@ textarea::placeholder { color: #6f7a78; }
 
   .progress-step { grid-template-columns: 12px minmax(0, 1fr); }
   .progress-step code { display: none; }
+
+  .notice {
+    top: 72px;
+    right: 12px;
+    bottom: auto;
+    left: 12px;
+    width: auto;
+    max-height: min(240px, calc(100dvh - 96px));
+    overflow-y: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
