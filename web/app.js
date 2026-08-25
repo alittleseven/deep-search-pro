@@ -1,22 +1,22 @@
-import { downloadUrl } from "./api.js?v=20260821-5";
-import { renderMarkdown, stringifyValue } from "./markdown.js?v=20260821-5";
-import { RunClient } from "./run-client.js?v=20260821-5";
+import { downloadUrl } from "./api.js?v=20260824-1";
+import { renderMarkdown, stringifyValue } from "./markdown.js?v=20260824-1";
+import { RunClient } from "./run-client.js?v=20260824-1";
 import {
   chatUrl,
   createSessionRecord,
   parseTraceSelection,
   restoredQuery,
   SessionRepository,
-} from "./session.js?v=20260821-5";
+} from "./session.js?v=20260824-1";
 import {
   ConsoleStore,
   ROLE_DEFINITIONS,
   roleForEvent,
-} from "./state.js?v=20260821-5";
+} from "./state.js?v=20260824-1";
 import {
   ExecutionVisualizer,
   statusForNode,
-} from "./visualizer.js?v=20260821-5";
+} from "./visualizer.js?v=20260824-1";
 
 const repository = new SessionRepository();
 const fallback = repository.list()[0] || {};

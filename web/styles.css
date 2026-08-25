@@ -20,9 +20,10 @@
   --radius-primary: 12px;
   --motion-fast: 160ms;
   --motion-standard: 190ms;
-  --composer-reserve: 250px;
-  --scroll-latest-offset: 330px;
-  --scroll-latest-offset-mobile: 320px;
+  --composer-max-height: 312px;
+  --composer-reserve: calc(var(--composer-max-height) + 72px);
+  --scroll-latest-offset: calc(var(--composer-max-height) + 42px);
+  --scroll-latest-offset-mobile: calc(var(--composer-max-height) + 42px);
   --content-width: 820px;
   --sans: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
@@ -784,7 +785,9 @@ textarea::placeholder { color: #6f7a78; }
   left: max(24px, calc((100% - var(--content-width)) / 2));
   display: flex;
   min-height: 112px;
+  max-height: var(--composer-max-height);
   flex-direction: column;
+  overflow: hidden;
   padding: 10px 12px 9px;
   border: 1px solid rgba(177, 192, 189, 0.36);
   border-radius: var(--radius-primary);
@@ -804,6 +807,7 @@ textarea::placeholder { color: #6f7a78; }
   min-height: 50px;
   max-height: 160px;
   flex: 1;
+  overflow-y: auto;
   resize: none;
   padding: 2px 4px 8px;
   border: 0;
@@ -922,12 +926,15 @@ textarea::placeholder { color: #6f7a78; }
   position: fixed;
   z-index: 50;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + var(--composer-max-height) + 16px);
   display: flex;
   width: min(420px, calc(100vw - 40px));
+  max-height: min(320px, calc(100dvh - var(--composer-max-height) - 76px));
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px 14px;
   border: 1px solid rgba(224, 120, 112, 0.48);
   border-radius: var(--radius-panel);
@@ -1071,7 +1078,7 @@ textarea::placeholder { color: #6f7a78; }
     bottom: auto;
     left: 12px;
     width: auto;
-    max-height: min(240px, calc(100dvh - 96px));
+    max-height: max(96px, min(220px, calc(100dvh - var(--composer-reserve) - 96px)));
     overflow-y: auto;
   }
 

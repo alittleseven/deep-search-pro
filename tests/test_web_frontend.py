@@ -222,10 +222,12 @@ def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
     assert "--radius-control: 10px" in styles
     assert "--radius-primary: 12px" in styles
     assert "--motion-fast: 160ms" in styles
-    assert "--composer-reserve: 250px" in styles
-    assert "--scroll-latest-offset: 330px" in styles
-    assert "--scroll-latest-offset-mobile: 320px" in styles
+    assert "--composer-max-height: 312px" in styles
+    assert "--composer-reserve: calc(var(--composer-max-height) + 72px)" in styles
+    assert "--scroll-latest-offset: calc(var(--composer-max-height) + 42px)" in styles
+    assert "--scroll-latest-offset-mobile: calc(var(--composer-max-height) + 42px)" in styles
     assert "max-height: 88px" in styles
+    assert "max-height: min(320px, calc(100dvh - var(--composer-max-height) - 76px))" in styles
     assert ".notice > span" in styles
     assert "overflow-wrap: anywhere" in styles
     assert "top: 72px" in styles
@@ -235,12 +237,22 @@ def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
     ]
     assert re.search(
         r"\.notice\s*\{[^}]*top:\s*72px;[^}]*bottom:\s*auto;[^}]*"
-        r"max-height:\s*min\(240px,\s*calc\(100dvh\s*-\s*96px\)\);",
+        r"max-height:\s*max\(96px,\s*min\(220px,\s*calc\(100dvh\s*-\s*"
+        r"var\(--composer-reserve\)\s*-\s*96px\)\)\);",
         mobile_styles,
         re.DOTALL,
     )
     assert ".scroll-to-latest" in styles
     assert '.send-button[data-busy="true"]' in styles
+    for selector in (
+        ".graph-edges path",
+        "stroke-linecap: round",
+        "stroke-linejoin: round",
+        "vector-effect: non-scaling-stroke",
+        '.graph-node[data-status="active"]',
+        ".role-item.selected",
+    ):
+        assert selector in styles
     assert "@media (max-width: 900px)" in styles
     assert "font-size: 8px" not in styles
     assert "font-size: 9px" not in styles

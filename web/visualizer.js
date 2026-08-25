@@ -35,9 +35,11 @@ function centerPoint(element, side) {
   };
 }
 
-function edgePath(start, end) {
-  const span = Math.max(20, (end.x - start.x) * 0.44);
-  return `M ${start.x} ${start.y} C ${start.x + span} ${start.y}, ${end.x - span} ${end.y}, ${end.x} ${end.y}`;
+export function edgePath(start, end) {
+  const horizontalDistance = Math.abs(end.x - start.x);
+  const handle = Math.max(56, Math.min(168, horizontalDistance * 0.48));
+  const direction = end.x >= start.x ? 1 : -1;
+  return `M ${start.x} ${start.y} C ${start.x + (handle * direction)} ${start.y}, ${end.x - (handle * direction)} ${end.y}, ${end.x} ${end.y}`;
 }
 
 function nodeStatus(snapshot, nodeId) {

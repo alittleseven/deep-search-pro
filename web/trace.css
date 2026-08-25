@@ -19,14 +19,15 @@
   gap: 10px;
   padding: 0 11px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: var(--muted);
   text-decoration: none;
 }
 
 .trace-navigation a:hover {
   color: var(--text);
-  background: #15191a;
+  border-color: rgba(177, 192, 189, 0.22);
+  background: var(--surface);
 }
 
 .trace-navigation a.active {
@@ -84,7 +85,7 @@
   min-height: 34px;
   padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--surface);
 }
 
@@ -182,12 +183,12 @@
   resize: vertical;
   padding: 11px 13px;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--surface);
   line-height: 1.55;
 }
 
-.query-field textarea:focus { border-color: #52605e; }
+.query-field textarea:focus { border-color: rgba(67, 184, 173, 0.62); }
 
 .upload-zone {
   display: flex;
@@ -199,7 +200,7 @@
   align-self: end;
   padding: 12px 14px;
   border: 1px dashed var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: var(--muted);
   background: #141819;
 }
@@ -240,7 +241,7 @@
   align-self: end;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-panel);
   background: var(--surface);
 }
 
@@ -265,7 +266,7 @@
 .run-button {
   min-height: 40px;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: #07110f;
   background: var(--teal);
   font-weight: 700;
@@ -347,17 +348,19 @@
   cursor: pointer;
   text-align: left;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #141819;
+  border-radius: var(--radius-panel);
+  background: rgba(20, 24, 25, 0.96);
 }
 
 .role-item:hover,
 .role-item.selected {
-  border-color: #4a5755;
+  border-color: rgba(177, 192, 189, 0.34);
   background: var(--surface);
 }
 
-.role-item.selected { box-shadow: inset 2px 0 var(--teal); }
+.role-item.selected {
+  box-shadow: inset 3px 0 0 var(--teal), 0 10px 24px rgba(0, 0, 0, 0.12);
+}
 
 .role-index {
   color: #687270;
@@ -435,7 +438,7 @@
   min-height: 34px;
   cursor: pointer;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: var(--text-2);
   background: var(--surface);
   font-size: 12px;
@@ -449,7 +452,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-panel);
   background: #0d1011;
 }
 
@@ -489,17 +492,20 @@
 
 .graph-edges path {
   fill: none;
-  stroke: #34403e;
-  stroke-width: 1.3;
+  stroke: rgba(137, 151, 148, 0.34);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
+  transition: stroke var(--motion-standard) ease, opacity var(--motion-standard) ease;
 }
 
-.graph-edges path.conditional { stroke-dasharray: 5 5; }
-.graph-edges path.observed { stroke: #367d76; }
+.graph-edges path.conditional { stroke-dasharray: 5 7; }
+.graph-edges path.observed { stroke: rgba(67, 184, 173, 0.62); }
 
 .graph-edges path.active {
   stroke: var(--teal);
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-dasharray: 7 6;
   animation: edge-flow 1.4s linear infinite;
 }
@@ -518,20 +524,23 @@
   justify-content: center;
   padding: 10px 11px;
   text-align: left;
-  border: 1px solid #34403e;
-  border-radius: 6px;
+  border: 1px solid rgba(137, 151, 148, 0.32);
+  border-radius: var(--radius-panel);
   background: rgba(20, 24, 25, 0.98);
   transform: translateY(-50%);
 }
 
 .graph-node:hover,
 .graph-node.selected {
-  border-color: #586663;
-  background: #1a1f20;
+  border-color: rgba(67, 184, 173, 0.48);
+  background: #1b2123;
 }
 
 .graph-node.selected { box-shadow: inset 0 0 0 1px rgba(67, 184, 173, 0.26); }
-.graph-node[data-status="active"] { border-color: var(--teal); }
+.graph-node[data-status="active"] {
+  border-color: rgba(67, 184, 173, 0.68);
+  box-shadow: 0 0 0 3px rgba(67, 184, 173, 0.08);
+}
 .graph-node[data-status="completed"] { border-color: #46694c; }
 .graph-node[data-status="failed"] { border-color: #854943; }
 
@@ -612,7 +621,7 @@
   box-shadow: -18px 0 40px rgba(0, 0, 0, 0.34);
   overscroll-behavior: contain;
   transform: translateX(101%);
-  transition: transform 180ms ease;
+  transition: transform var(--motion-standard) ease;
 }
 
 .inspector-drawer.open { transform: translateX(0); }
@@ -708,7 +717,7 @@
   overflow: auto;
   color: #c1ccca;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-panel);
   background: #0b0e0f;
   font-size: 12px;
   line-height: 1.65;
@@ -765,7 +774,7 @@
   height: 36px;
   padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: var(--text-2);
   background: var(--surface);
   font-size: 12px;
@@ -983,4 +992,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .inspector-drawer { transition: none; }
+  .graph-edges path.active { animation: none; }
 }
