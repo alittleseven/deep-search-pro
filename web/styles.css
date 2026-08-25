@@ -1065,6 +1065,16 @@ textarea::placeholder { color: #6f7a78; }
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--scroll-latest-offset-mobile));
   }
 
+  .notice {
+    top: 72px;
+    right: 12px;
+    bottom: auto;
+    left: 12px;
+    width: auto;
+    max-height: min(240px, calc(100dvh - 96px));
+    overflow-y: auto;
+  }
+
   .user-bubble { max-width: 88%; }
 
   .markdown-body,
@@ -1088,16 +1098,6 @@ textarea::placeholder { color: #6f7a78; }
 
   .progress-step { grid-template-columns: 12px minmax(0, 1fr); }
   .progress-step code { display: none; }
-
-  .notice {
-    top: 72px;
-    right: 12px;
-    bottom: auto;
-    left: 12px;
-    width: auto;
-    max-height: min(240px, calc(100dvh - 96px));
-    overflow-y: auto;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

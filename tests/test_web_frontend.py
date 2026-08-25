@@ -230,6 +230,15 @@ def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
     assert "overflow-wrap: anywhere" in styles
     assert "top: 72px" in styles
     assert "bottom: auto" in styles
+    mobile_styles = styles[
+        styles.index("@media (max-width: 900px)") : styles.index("@media (max-width: 520px)")
+    ]
+    assert re.search(
+        r"\.notice\s*\{[^}]*top:\s*72px;[^}]*bottom:\s*auto;[^}]*"
+        r"max-height:\s*min\(240px,\s*calc\(100dvh\s*-\s*96px\)\);",
+        mobile_styles,
+        re.DOTALL,
+    )
     assert ".scroll-to-latest" in styles
     assert '.send-button[data-busy="true"]' in styles
     assert "@media (max-width: 900px)" in styles
