@@ -120,6 +120,7 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "renderMarkdown",
         "downloadUrl",
         "traceUrl",
+        "parseChatSelection",
         "shouldSubmitOnEnter",
         "isNearBottom",
         "isAtBottom",

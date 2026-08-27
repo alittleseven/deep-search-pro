@@ -33,6 +33,23 @@ export function parseTraceSelection(search, fallback = {}) {
   };
 }
 
+export function parseChatSelection(
+  search,
+  fallback = {},
+  createThreadId = () => globalThis.crypto.randomUUID(),
+) {
+  const params = new URLSearchParams(search);
+  const threadId = params.get("thread_id");
+  const runId = params.get("run_id");
+  if (threadId) {
+    return { threadId, runId: runId || null };
+  }
+  return {
+    threadId: fallback.threadId || createThreadId(),
+    runId: runId || fallback.runId || null,
+  };
+}
+
 export function traceUrl(threadId, runId) {
   const params = new URLSearchParams();
   if (threadId) params.set("thread_id", threadId);

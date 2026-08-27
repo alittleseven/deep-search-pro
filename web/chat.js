@@ -18,9 +18,10 @@ import { renderMarkdown } from "./markdown.js?v=20260824-1";
 import { RunClient } from "./run-client.js?v=20260824-1";
 import {
   createSessionRecord,
+  parseChatSelection,
   SessionRepository,
   traceUrl,
-} from "./session.js?v=20260824-1";
+} from "./session.js?v=20260827-1";
 import { ConsoleStore, isTerminalStatus, ROLE_DEFINITIONS } from "./state.js?v=20260824-1";
 
 const elements = Object.fromEntries(
@@ -44,11 +45,11 @@ const ROLE_LABELS = Object.fromEntries(
 
 const repository = new SessionRepository();
 const savedSession = repository.list()[0] || null;
-const params = new URLSearchParams(window.location.search);
-const initialSelection = {
-  threadId: params.get("thread_id") || savedSession?.threadId || crypto.randomUUID(),
-  runId: params.get("run_id") || savedSession?.runId || null,
-};
+const initialSelection = parseChatSelection(
+  window.location.search,
+  savedSession || {},
+  () => crypto.randomUUID(),
+);
 const store = new ConsoleStore(initialSelection);
 const runClient = new RunClient({ store, onNotice: showNotice });
 
