@@ -62,6 +62,16 @@ test("Trace selection prefers URL values and encodes links", () => {
   assert.equal(chatUrl("t 1", "r/2"), "/?thread_id=t+1&run_id=r%2F2");
 });
 
+test("Trace selection ignores stale saved runs when opened without URL selection", () => {
+  assert.deepEqual(
+    parseTraceSelection("", {
+      threadId: "saved-thread",
+      runId: "stale-run",
+    }),
+    { threadId: null, runId: null },
+  );
+});
+
 test("chat selection does not pair a URL thread with a stale saved run", () => {
   assert.deepEqual(
     parseChatSelection("?thread_id=visible-thread", {

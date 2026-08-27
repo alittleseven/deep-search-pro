@@ -7,7 +7,7 @@ import {
   parseTraceSelection,
   restoredQuery,
   SessionRepository,
-} from "./session.js?v=20260824-1";
+} from "./session.js?v=20260827-2";
 import {
   ConsoleStore,
   ROLE_DEFINITIONS,
