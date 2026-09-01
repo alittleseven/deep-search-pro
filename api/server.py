@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+import mimetypes
 import sys
 import uvicorn
 from pathlib import Path
@@ -25,12 +26,23 @@ app = FastAPI(title="DeepAgents API")
 app.include_router(trace_router)
 
 web_dir = project_root / "web"
+mimetypes.add_type("text/javascript", ".js")
 app.mount("/static", StaticFiles(directory=web_dir), name="web-static")
 
 
 @app.get("/", include_in_schema=False)
 async def web_console() -> FileResponse:
     return FileResponse(web_dir / "index.html")
+
+
+@app.get("/trace", include_in_schema=False)
+async def trace_console() -> FileResponse:
+    return FileResponse(web_dir / "trace.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> FileResponse:
+    return FileResponse(web_dir / "favicon.svg", media_type="image/svg+xml")
 
 
 # 挂载输出目录，以便前端访问生成的静态文件

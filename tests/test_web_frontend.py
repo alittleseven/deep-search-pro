@@ -1,3 +1,4 @@
+import re
 import threading
 from pathlib import Path
 
@@ -10,22 +11,52 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = PROJECT_ROOT / "web"
 
 
-def test_web_console_static_assets_and_swagger_remain_available() -> None:
+def test_chat_and_trace_pages_and_static_assets_are_available() -> None:
     with TestClient(server.app) as client:
-        root = client.get("/")
-        css = client.get("/static/styles.css")
-        javascript = client.get("/static/app.js")
+        chat = client.get("/")
+        trace = client.get("/trace")
+        assets = {
+            path: client.get(path)
+            for path in (
+                "/static/styles.css",
+                "/static/trace.css",
+                "/static/chat.js",
+                "/static/chat-interactions.js",
+                "/static/app.js",
+                "/static/session.js",
+                "/static/markdown.js",
+                "/static/run-client.js",
+            )
+        }
         docs = client.get("/docs")
 
-    assert root.status_code == 200
-    assert "Deep Search Pro Console" in root.text
-    assert 'type="module"' in root.text
-    assert css.status_code == 200
-    assert "text/css" in css.headers["content-type"]
-    assert javascript.status_code == 200
-    assert "javascript" in javascript.headers["content-type"]
+    assert chat.status_code == 200
+    assert "Deep Search" in chat.text
+    assert 'href="/static/styles.css?v=' in chat.text
+    assert 'src="/static/chat.js?v=' in chat.text
+    assert trace.status_code == 200
+    assert "运行详情" in trace.text
+    assert 'href="/static/styles.css?v=' in trace.text
+    assert 'href="/static/trace.css?v=' in trace.text
+    assert 'src="/static/app.js?v=' in trace.text
+    assert all(response.status_code == 200 for response in assets.values())
+    assert "text/css" in assets["/static/styles.css"].headers["content-type"]
+    assert "text/css" in assets["/static/trace.css"].headers["content-type"]
+    assert all(
+        "javascript" in response.headers["content-type"]
+        for path, response in assets.items()
+        if path.endswith(".js")
+    )
     assert docs.status_code == 200
     assert "Swagger UI" in docs.text
+
+
+def test_web_console_favicon_is_available() -> None:
+    with TestClient(server.app) as client:
+        favicon = client.get("/favicon.ico")
+
+    assert favicon.status_code == 200
+    assert "image/" in favicon.headers["content-type"]
 
 
 def test_frontend_uses_no_external_runtime_or_html_injection_sink() -> None:
@@ -43,6 +74,200 @@ def test_frontend_uses_no_external_runtime_or_html_injection_sink() -> None:
     assert "eval(" not in sources
     assert "javascript:" not in sources
     assert "textContent" in sources
+
+    markdown = (WEB_ROOT / "markdown.js").read_text(encoding="utf-8")
+    run_client = (WEB_ROOT / "run-client.js").read_text(encoding="utf-8")
+    assert "export function renderMarkdown" in markdown
+    assert "export function stringifyValue" in markdown
+    assert "export class RunClient" in run_client
+    assert "await uploadFiles" in run_client
+    assert "await startTask" in run_client
+    assert run_client.index("await uploadFiles") < run_client.index("await startTask")
+
+
+def test_frontend_static_module_imports_are_cache_busted() -> None:
+    for name in ("app.js", "chat.js", "run-client.js"):
+        source = (WEB_ROOT / name).read_text(encoding="utf-8")
+        imports = [line for line in source.splitlines() if 'from "./' in line]
+        assert imports
+        assert all(".js?v=" in line for line in imports)
+
+
+def test_chat_page_exposes_complete_question_workflow() -> None:
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+
+    for element_id in (
+        "session-list",
+        "new-session",
+        "session-search",
+        "messages",
+        "scroll-to-latest",
+        "empty-state",
+        "task-input",
+        "file-input",
+        "queued-files",
+        "send-button",
+        "trace-link",
+        "connection-label",
+        "notice",
+    ):
+        assert f'id="{element_id}"' in html
+
+    for symbol in (
+        "RunClient",
+        "SessionRepository",
+        "renderMarkdown",
+        "downloadUrl",
+        "traceUrl",
+        "parseChatSelection",
+        "shouldSubmitOnEnter",
+        "isNearBottom",
+        "isAtBottom",
+        "reduceScrollIntent",
+        "shouldFollowNewContent",
+        "shouldRestoreRenderAnchor",
+        "createFrameScheduler",
+        "createRenderBatch",
+        "queueRenderBatch",
+        "takeRenderBatch",
+        "isExplicitScrollIntent",
+        "aria-busy",
+    ):
+        assert symbol in script
+
+
+def test_historical_session_resets_follow_state_before_switching() -> None:
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+    activate_start = script.index("async function activateSession(session)")
+    activate_end = script.index("async function restoreInitialSession()", activate_start)
+    activate_session = script[activate_start:activate_end]
+
+    assert activate_session.index("resetScrollIntent();") < activate_session.index(
+        "store.newSession();",
+    )
+
+
+def test_chat_scroll_intent_wiring_cancels_user_and_stale_render_scrolls() -> None:
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+
+    for event_name in ("wheel", "touchstart", "pointerdown", "keyup", "pointerup", "blur"):
+        assert f'"{event_name}"' in script
+    assert "conversationFrames.schedule" in script
+    assert "conversationFrames.cancel" in script
+    assert "conversationBatch = queueRenderBatch" in script
+    assert "programmatic: scrollIntent.programmatic" in script
+    assert "batch.programmatic" in script
+
+    latest_start = script.index("function scrollToLatest")
+    latest_end = script.index("function shortId", latest_start)
+    latest_scroll = script[latest_start:latest_end]
+    assert latest_scroll.index("discardConversationBatch()") < latest_scroll.index(
+        "scrollIntent = reduceScrollIntent"
+    )
+
+    scroll_start = script.index("function handleMessageScroll()")
+    scroll_end = script.index("function scrollToLatest", scroll_start)
+    handle_scroll = script[scroll_start:scroll_end]
+    assert "discardConversationBatch" not in handle_scroll
+    assert "conversationFrames.cancel" not in handle_scroll
+
+
+def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:
+    html = (WEB_ROOT / "trace.html").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "trace.css").read_text(encoding="utf-8")
+
+    for element_id in (
+        "run-title",
+        "chat-link",
+        "task-input",
+        "run-button",
+        "role-summary",
+        "execution-graph",
+        "graph-edges",
+        "graph-empty",
+        "inspector-drawer",
+        "inspector-body",
+        "records-collapse",
+        "events-list",
+        "final-report",
+        "files-list",
+        "raw-events",
+    ):
+        assert f'id="{element_id}"' in html
+
+    assert "overflow-y: auto" in css
+    assert 'data-bottom-tab="events"' in html
+    assert 'data-bottom-tab="report"' in html
+    assert 'data-bottom-tab="files"' in html
+    assert 'data-bottom-tab="raw"' in html
+
+
+def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
+    pages = "\n".join(
+        (WEB_ROOT / name).read_text(encoding="utf-8")
+        for name in ("index.html", "trace.html")
+    )
+    styles = "\n".join(
+        (WEB_ROOT / name).read_text(encoding="utf-8")
+        for name in ("styles.css", "trace.css")
+    )
+
+    assert 'aria-live="polite"' in pages
+    assert 'aria-label="关闭节点详情"' in pages
+    assert 'role="dialog"' in pages
+    assert 'aria-modal="true"' in pages
+    assert ":focus-visible" in styles
+    assert "prefers-reduced-motion" in styles
+    assert "--radius-panel: 8px" in styles
+    assert "--radius-control: 10px" in styles
+    assert "--radius-primary: 12px" in styles
+    assert "--motion-fast: 160ms" in styles
+    assert "--composer-max-height: 312px" in styles
+    assert "--composer-reserve: calc(var(--composer-max-height) + 72px)" in styles
+    assert "--scroll-latest-offset: calc(var(--composer-max-height) + 42px)" in styles
+    assert "--scroll-latest-offset-mobile: calc(var(--composer-max-height) + 42px)" in styles
+    assert "max-height: 88px" in styles
+    assert "max-height: min(320px, calc(100dvh - var(--composer-max-height) - 76px))" in styles
+    assert ".notice > span" in styles
+    assert "overflow-wrap: anywhere" in styles
+    assert "top: 72px" in styles
+    assert "bottom: auto" in styles
+    mobile_styles = styles[
+        styles.index("@media (max-width: 900px)") : styles.index("@media (max-width: 520px)")
+    ]
+    assert re.search(
+        r"\.notice\s*\{[^}]*top:\s*72px;[^}]*bottom:\s*auto;[^}]*"
+        r"max-height:\s*max\(96px,\s*min\(220px,\s*calc\(100dvh\s*-\s*"
+        r"var\(--composer-reserve\)\s*-\s*96px\)\)\);",
+        mobile_styles,
+        re.DOTALL,
+    )
+    assert ".scroll-to-latest" in styles
+    assert '.send-button[data-busy="true"]' in styles
+    for selector in (
+        ".graph-edges path",
+        "stroke-linecap: round",
+        "stroke-linejoin: round",
+        "vector-effect: non-scaling-stroke",
+        '.graph-node[data-status="active"]',
+        ".role-item.selected",
+    ):
+        assert selector in styles
+    assert "@media (max-width: 900px)" in styles
+    assert "font-size: 8px" not in styles
+    assert "font-size: 9px" not in styles
+    assert "font-size: 10px" not in styles
+    assert not re.search(
+        r"\.trace-topbar\s+\.trace-button\s*\{[^}]*display:\s*none",
+        styles,
+        re.DOTALL,
+    )
+
+    trace_script = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    assert "chatUrl" in trace_script
+    assert "restoredQuery" in trace_script
+    assert 'elements["close-inspector"].focus()' in trace_script
 
 
 def test_upload_completes_before_task_submission(monkeypatch, tmp_path) -> None:

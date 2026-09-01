@@ -1,4 +1,4 @@
-const EDGE_DEFINITIONS = [
+export const EDGE_DEFINITIONS = Object.freeze([
   ["input", "main", false],
   ["main", "network", true],
   ["main", "database", true],
@@ -10,25 +10,36 @@ const EDGE_DEFINITIONS = [
   ["synthesis", "files", true],
   ["synthesis", "output", false],
   ["files", "output", false],
-];
+]);
+
+const ZOOM_LEVELS = [0.75, 1, 1.25];
+
+export function nextZoom(current, direction) {
+  const index = ZOOM_LEVELS.indexOf(current);
+  const safeIndex = index === -1 ? 1 : index;
+  return ZOOM_LEVELS[
+    Math.max(0, Math.min(ZOOM_LEVELS.length - 1, safeIndex + direction))
+  ];
+}
 
 function svgElement(name) {
   return document.createElementNS("http://www.w3.org/2000/svg", name);
 }
 
-function centerPoint(element, containerRect, side) {
-  const rect = element.getBoundingClientRect();
+function centerPoint(element, side) {
   return {
     x: side === "left"
-      ? rect.left - containerRect.left
-      : rect.right - containerRect.left,
-    y: rect.top - containerRect.top + rect.height / 2,
+      ? element.offsetLeft
+      : element.offsetLeft + element.offsetWidth,
+    y: element.offsetTop,
   };
 }
 
-function edgePath(start, end) {
-  const span = Math.max(20, (end.x - start.x) * 0.44);
-  return `M ${start.x} ${start.y} C ${start.x + span} ${start.y}, ${end.x - span} ${end.y}, ${end.x} ${end.y}`;
+export function edgePath(start, end) {
+  const horizontalDistance = Math.abs(end.x - start.x);
+  const handle = Math.max(56, Math.min(168, horizontalDistance * 0.48));
+  const direction = end.x >= start.x ? 1 : -1;
+  return `M ${start.x} ${start.y} C ${start.x + (handle * direction)} ${start.y}, ${end.x - (handle * direction)} ${end.y}, ${end.x} ${end.y}`;
 }
 
 function nodeStatus(snapshot, nodeId) {
@@ -86,6 +97,8 @@ function nodeDetail(snapshot, nodeId, status) {
 export class ExecutionVisualizer {
   constructor(container, onSelect) {
     this.container = container;
+    this.stage = container.closest(".graph-stage");
+    this.viewport = container.closest(".graph-viewport");
     this.svg = container.querySelector("#graph-edges");
     this.nodes = new Map(
       [...container.querySelectorAll("[data-node]")].map((node) => [
@@ -94,12 +107,47 @@ export class ExecutionVisualizer {
       ]),
     );
     this.statuses = {};
+    this.baseWidth = 1120;
+    this.baseHeight = 430;
+    this.scale = 1;
+    this.fitMode = true;
 
     for (const [id, node] of this.nodes) {
       node.addEventListener("click", () => onSelect(id));
     }
-    this.resizeObserver = new ResizeObserver(() => this.drawEdges());
-    this.resizeObserver.observe(container);
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.fitMode) {
+        this.fit();
+      } else {
+        this.drawEdges();
+      }
+    });
+    this.resizeObserver.observe(this.viewport || container);
+    this.fit();
+  }
+
+  setZoom(scale, { fitMode = false } = {}) {
+    this.scale = scale;
+    this.fitMode = fitMode;
+    this.container.style.transform = `scale(${scale})`;
+    if (this.stage) {
+      this.stage.style.width = `${this.baseWidth * scale}px`;
+      this.stage.style.height = `${this.baseHeight * scale}px`;
+    }
+    this.drawEdges();
+    return this.scale;
+  }
+
+  zoomBy(direction) {
+    return this.setZoom(nextZoom(this.scale, direction));
+  }
+
+  fit() {
+    const available = this.viewport?.clientWidth || this.baseWidth;
+    const ratio = available / this.baseWidth;
+    const scale = [...ZOOM_LEVELS].reverse().find((level) => level <= ratio)
+      || ZOOM_LEVELS[0];
+    return this.setZoom(scale, { fitMode: true });
   }
 
   select(nodeId) {
@@ -120,8 +168,7 @@ export class ExecutionVisualizer {
   }
 
   drawEdges() {
-    const containerRect = this.container.getBoundingClientRect();
-    if (!containerRect.width || !containerRect.height) return;
+    if (!this.container.offsetWidth || !this.container.offsetHeight) return;
     const fragment = document.createDocumentFragment();
 
     for (const [sourceId, targetId, conditional] of EDGE_DEFINITIONS) {
@@ -132,8 +179,8 @@ export class ExecutionVisualizer {
       path.setAttribute(
         "d",
         edgePath(
-          centerPoint(source, containerRect, "right"),
-          centerPoint(target, containerRect, "left"),
+          centerPoint(source, "right"),
+          centerPoint(target, "left"),
         ),
       );
       const sourceStatus = this.statuses[sourceId];
