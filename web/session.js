@@ -27,9 +27,31 @@ export function upsertSession(sessions, record) {
 
 export function parseTraceSelection(search, fallback = {}) {
   const params = new URLSearchParams(search);
+  const hasThreadId = params.has("thread_id");
+  const hasRunId = params.has("run_id");
+  if (!hasThreadId && !hasRunId) {
+    return { threadId: null, runId: null };
+  }
   return {
     threadId: params.get("thread_id") || fallback.threadId || null,
     runId: params.get("run_id") || fallback.runId || null,
+  };
+}
+
+export function parseChatSelection(
+  search,
+  fallback = {},
+  createThreadId = () => globalThis.crypto.randomUUID(),
+) {
+  const params = new URLSearchParams(search);
+  const threadId = params.get("thread_id");
+  const runId = params.get("run_id");
+  if (threadId) {
+    return { threadId, runId: runId || null };
+  }
+  return {
+    threadId: fallback.threadId || createThreadId(),
+    runId: runId || fallback.runId || null,
   };
 }
 

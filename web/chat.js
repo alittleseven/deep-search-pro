@@ -1,8 +1,24 @@
 import { downloadUrl } from "./api.js?v=20260910-5";
+import {
+  createFrameScheduler,
+  createRenderBatch,
+  initialScrollIntent,
+  isExplicitScrollIntent,
+  isAtBottom,
+  isNearBottom,
+  queueRenderBatch,
+  reduceScrollIntent,
+  resetRenderBatch,
+  shouldFollowNewContent,
+  shouldRestoreRenderAnchor,
+  shouldSubmitOnEnter,
+  takeRenderBatch,
+} from "./chat-interactions.js?v=20260910-5";
 import { renderMarkdown } from "./markdown.js?v=20260910-5";
 import { RunClient } from "./run-client.js?v=20260910-5";
 import {
   createSessionRecord,
+  parseChatSelection,
   SessionRepository,
   traceUrl,
 } from "./session.js?v=20260910-5";
@@ -29,11 +45,11 @@ const ROLE_LABELS = Object.fromEntries(
 
 const repository = new SessionRepository();
 const savedSession = repository.list()[0] || null;
-const params = new URLSearchParams(window.location.search);
-const initialSelection = {
-  threadId: params.get("thread_id") || savedSession?.threadId || crypto.randomUUID(),
-  runId: params.get("run_id") || savedSession?.runId || null,
-};
+const initialSelection = parseChatSelection(
+  window.location.search,
+  savedSession || {},
+  () => crypto.randomUUID(),
+);
 const store = new ConsoleStore(initialSelection);
 const runClient = new RunClient({ store, onNotice: showNotice });
 
@@ -43,6 +59,18 @@ let sessionFilter = "";
 let noticeTimer = null;
 let lastSessionSignature = "";
 let lastEventCount = 0;
+let conversationBatch = createRenderBatch();
+let scrollIntent = initialScrollIntent();
+
+const activeScrollInputs = new Set();
+const conversationFrames = createFrameScheduler({
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+});
+const wheelFrames = createFrameScheduler({
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+});
 
 function makeElement(tag, className = "", text) {
   const element = document.createElement(tag);
@@ -57,6 +85,80 @@ function statusLabel(status) {
 
 function isBusy(status) {
   return ["uploading", "starting", "restoring", "running"].includes(status);
+}
+
+function renderLatestControl() {
+  const hidden = scrollIntent.programmatic || scrollIntent.nearBottom;
+  elements["scroll-to-latest"].classList.toggle("hidden", hidden);
+}
+
+function updateLatestControl() {
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "scroll",
+    nearBottom: isNearBottom(elements.messages),
+    atBottom: isAtBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
+function discardConversationBatch() {
+  conversationFrames.cancel();
+  conversationBatch = resetRenderBatch(conversationBatch);
+}
+
+function resetScrollIntent() {
+  discardConversationBatch();
+  wheelFrames.cancel();
+  activeScrollInputs.clear();
+  scrollIntent = reduceScrollIntent(scrollIntent, { type: "reset" });
+  renderLatestControl();
+}
+
+function beginUserScroll(source) {
+  activeScrollInputs.add(source);
+  discardConversationBatch();
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "user-start",
+    nearBottom: isNearBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
+function finishUserScroll(source) {
+  if (!activeScrollInputs.delete(source) || activeScrollInputs.size) return;
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "user-end",
+    nearBottom: isNearBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
+function settleUserScroll() {
+  wheelFrames.cancel();
+  if (!activeScrollInputs.size && !scrollIntent.userScrolling) return;
+  discardConversationBatch();
+  activeScrollInputs.clear();
+  scrollIntent = reduceScrollIntent(scrollIntent, {
+    type: "user-end",
+    nearBottom: isNearBottom(elements.messages),
+  });
+  renderLatestControl();
+}
+
+function handleMessageScroll() {
+  updateLatestControl();
+}
+
+function scrollToLatest({ smooth = false } = {}) {
+  discardConversationBatch();
+  scrollIntent = reduceScrollIntent(scrollIntent, { type: "programmatic-start" });
+  renderLatestControl();
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  elements.messages.scrollTo({
+    top: elements.messages.scrollHeight,
+    behavior: smooth && !reducedMotion ? "smooth" : "auto",
+  });
+  updateLatestControl();
 }
 
 function shortId(value) {
@@ -113,9 +215,11 @@ function renderHeader(snapshot) {
 
   elements["trace-link"].href = traceUrl(snapshot.threadId, snapshot.runId);
   elements["trace-link"].setAttribute("aria-disabled", String(!snapshot.runId));
-  elements["send-button"].disabled = isBusy(snapshot.taskStatus)
-    || !elements["task-input"].value.trim();
-  elements["attach-button"].disabled = isBusy(snapshot.taskStatus);
+  const busy = isBusy(snapshot.taskStatus);
+  elements["send-button"].disabled = busy || !elements["task-input"].value.trim();
+  elements["send-button"].dataset.busy = String(busy);
+  elements["send-button"].setAttribute("aria-busy", String(busy));
+  elements["attach-button"].disabled = busy;
 }
 
 function renderSessions(snapshot) {
@@ -254,15 +358,30 @@ function renderConversation(snapshot) {
     fragment.append(assistant);
   }
 
-  const shouldScroll = snapshot.events.length !== lastEventCount
+  const contentChanged = snapshot.events.length !== lastEventCount
     || pendingQuery
     || isTerminalStatus(snapshot.taskStatus);
+  conversationBatch = queueRenderBatch(conversationBatch, {
+    scrollTop: elements.messages.scrollTop,
+    contentChanged,
+    programmatic: scrollIntent.programmatic,
+  });
   elements.conversation.replaceChildren(fragment);
-  if (shouldScroll) {
-    requestAnimationFrame(() => {
-      elements.messages.scrollTop = elements.messages.scrollHeight;
-    });
-  }
+  conversationFrames.schedule(() => {
+    const batch = takeRenderBatch(conversationBatch);
+    conversationBatch = batch.remaining;
+    if (shouldFollowNewContent(scrollIntent, batch.contentChanged)) {
+      scrollToLatest();
+    } else if (shouldRestoreRenderAnchor(
+      scrollIntent,
+      batch.anchor,
+      batch.contentChanged,
+      batch.programmatic,
+    )) {
+      elements.messages.scrollTop = batch.anchor;
+    }
+    updateLatestControl();
+  });
   lastEventCount = snapshot.events.length;
 }
 
@@ -330,6 +449,7 @@ async function submitQuestion(event) {
   if (!query || isBusy(store.snapshot.taskStatus)) return;
 
   pendingQuery = query;
+  resetScrollIntent();
   render(store.snapshot);
   try {
     const response = await runClient.start({
@@ -369,6 +489,7 @@ function newSession() {
   pendingQuery = "";
   queuedFiles = [];
   lastSessionSignature = "";
+  resetScrollIntent();
   store.newSession();
   history.replaceState(null, "", "/");
   elements["task-input"].value = "";
@@ -386,6 +507,7 @@ async function activateSession(session) {
   pendingQuery = "";
   queuedFiles = [];
   lastSessionSignature = "";
+  resetScrollIntent();
   store.newSession();
   store.patch({
     threadId: session.threadId,
@@ -434,10 +556,25 @@ elements["task-input"].addEventListener("input", (event) => {
   renderHeader(store.snapshot);
 });
 elements["task-input"].addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    elements.composer.requestSubmit();
-  }
+  if (!shouldSubmitOnEnter(event)) return;
+  event.preventDefault();
+  elements.composer.requestSubmit();
+});
+elements.messages.addEventListener("scroll", handleMessageScroll, { passive: true });
+elements.messages.addEventListener("wheel", (event) => {
+  if (!isExplicitScrollIntent(event)) return;
+  beginUserScroll("wheel");
+  wheelFrames.schedule(() => finishUserScroll("wheel"));
+}, { passive: true });
+elements.messages.addEventListener("touchstart", (event) => {
+  if (isExplicitScrollIntent(event)) beginUserScroll("touch");
+}, { passive: true });
+elements.messages.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch" || !isExplicitScrollIntent(event)) return;
+  beginUserScroll(`pointer:${event.pointerId}`);
+}, { passive: true });
+elements["scroll-to-latest"].addEventListener("click", () => {
+  scrollToLatest({ smooth: true });
 });
 elements["trace-link"].addEventListener("click", (event) => {
   if (elements["trace-link"].getAttribute("aria-disabled") === "true") {
@@ -461,11 +598,24 @@ elements["close-sidebar"].addEventListener("click", closeSidebar);
 elements["sidebar-backdrop"].addEventListener("click", closeSidebar);
 
 window.addEventListener("keydown", (event) => {
+  if (isExplicitScrollIntent(event)) beginUserScroll(`keyboard:${event.key}`);
   if (event.key === "Escape" && elements.sidebar.classList.contains("open")) {
     closeSidebar();
     elements["open-sidebar"].focus();
   }
 });
+window.addEventListener("keyup", (event) => {
+  finishUserScroll(`keyboard:${event.key}`);
+});
+window.addEventListener("pointerup", (event) => {
+  finishUserScroll(`pointer:${event.pointerId}`);
+}, { passive: true });
+window.addEventListener("pointercancel", (event) => {
+  finishUserScroll(`pointer:${event.pointerId}`);
+}, { passive: true });
+window.addEventListener("touchend", () => finishUserScroll("touch"), { passive: true });
+window.addEventListener("touchcancel", () => finishUserScroll("touch"), { passive: true });
+window.addEventListener("blur", settleUserScroll);
 
 for (const eventName of ["dragenter", "dragover"]) {
   elements.composer.addEventListener(eventName, (event) => {

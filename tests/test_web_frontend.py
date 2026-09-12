@@ -21,6 +21,7 @@ def test_chat_and_trace_pages_and_static_assets_are_available() -> None:
                 "/static/styles.css",
                 "/static/trace.css",
                 "/static/chat.js",
+                "/static/chat-interactions.js",
                 "/static/app.js",
                 "/static/session.js",
                 "/static/markdown.js",
@@ -101,6 +102,7 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "new-session",
         "session-search",
         "messages",
+        "scroll-to-latest",
         "empty-state",
         "task-input",
         "file-input",
@@ -118,8 +120,57 @@ def test_chat_page_exposes_complete_question_workflow() -> None:
         "renderMarkdown",
         "downloadUrl",
         "traceUrl",
+        "parseChatSelection",
+        "shouldSubmitOnEnter",
+        "isNearBottom",
+        "isAtBottom",
+        "reduceScrollIntent",
+        "shouldFollowNewContent",
+        "shouldRestoreRenderAnchor",
+        "createFrameScheduler",
+        "createRenderBatch",
+        "queueRenderBatch",
+        "takeRenderBatch",
+        "isExplicitScrollIntent",
+        "aria-busy",
     ):
         assert symbol in script
+
+
+def test_historical_session_resets_follow_state_before_switching() -> None:
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+    activate_start = script.index("async function activateSession(session)")
+    activate_end = script.index("async function restoreInitialSession()", activate_start)
+    activate_session = script[activate_start:activate_end]
+
+    assert activate_session.index("resetScrollIntent();") < activate_session.index(
+        "store.newSession();",
+    )
+
+
+def test_chat_scroll_intent_wiring_cancels_user_and_stale_render_scrolls() -> None:
+    script = (WEB_ROOT / "chat.js").read_text(encoding="utf-8")
+
+    for event_name in ("wheel", "touchstart", "pointerdown", "keyup", "pointerup", "blur"):
+        assert f'"{event_name}"' in script
+    assert "conversationFrames.schedule" in script
+    assert "conversationFrames.cancel" in script
+    assert "conversationBatch = queueRenderBatch" in script
+    assert "programmatic: scrollIntent.programmatic" in script
+    assert "batch.programmatic" in script
+
+    latest_start = script.index("function scrollToLatest")
+    latest_end = script.index("function shortId", latest_start)
+    latest_scroll = script[latest_start:latest_end]
+    assert latest_scroll.index("discardConversationBatch()") < latest_scroll.index(
+        "scrollIntent = reduceScrollIntent"
+    )
+
+    scroll_start = script.index("function handleMessageScroll()")
+    scroll_end = script.index("function scrollToLatest", scroll_start)
+    handle_scroll = script[scroll_start:scroll_end]
+    assert "discardConversationBatch" not in handle_scroll
+    assert "conversationFrames.cancel" not in handle_scroll
 
 
 def test_trace_page_preserves_diagnostics_in_vertical_layout() -> None:
@@ -168,6 +219,41 @@ def test_frontend_has_accessible_controls_and_responsive_guards() -> None:
     assert 'aria-modal="true"' in pages
     assert ":focus-visible" in styles
     assert "prefers-reduced-motion" in styles
+    assert "--radius-panel: 8px" in styles
+    assert "--radius-control: 10px" in styles
+    assert "--radius-primary: 12px" in styles
+    assert "--motion-fast: 160ms" in styles
+    assert "--composer-max-height: 312px" in styles
+    assert "--composer-reserve: calc(var(--composer-max-height) + 72px)" in styles
+    assert "--scroll-latest-offset: calc(var(--composer-max-height) + 42px)" in styles
+    assert "--scroll-latest-offset-mobile: calc(var(--composer-max-height) + 42px)" in styles
+    assert "max-height: 88px" in styles
+    assert "max-height: min(320px, calc(100dvh - var(--composer-max-height) - 76px))" in styles
+    assert ".notice > span" in styles
+    assert "overflow-wrap: anywhere" in styles
+    assert "top: 72px" in styles
+    assert "bottom: auto" in styles
+    mobile_styles = styles[
+        styles.index("@media (max-width: 900px)") : styles.index("@media (max-width: 520px)")
+    ]
+    assert re.search(
+        r"\.notice\s*\{[^}]*top:\s*72px;[^}]*bottom:\s*auto;[^}]*"
+        r"max-height:\s*max\(96px,\s*min\(220px,\s*calc\(100dvh\s*-\s*"
+        r"var\(--composer-reserve\)\s*-\s*96px\)\)\);",
+        mobile_styles,
+        re.DOTALL,
+    )
+    assert ".scroll-to-latest" in styles
+    assert '.send-button[data-busy="true"]' in styles
+    for selector in (
+        ".graph-edges path",
+        "stroke-linecap: round",
+        "stroke-linejoin: round",
+        "vector-effect: non-scaling-stroke",
+        '.graph-node[data-status="active"]',
+        ".role-item.selected",
+    ):
+        assert selector in styles
     assert "@media (max-width: 900px)" in styles
     assert "font-size: 8px" not in styles
     assert "font-size: 9px" not in styles

@@ -6,7 +6,7 @@ const traceCss = readFileSync(new URL("../web/trace.css", import.meta.url), "utf
 
 test("mobile trace controls reset desktop width constraints", () => {
   const mobileRules = traceCss.match(
-    /@media \(max-width: 900px\) \{([\s\S]*?)\n\}\n\n@media \(max-width: 560px\)/,
+    /@media \(max-width: 900px\) \{([\s\S]*?)\r?\n\}\r?\n\r?\n@media \(max-width: 560px\)/,
   )?.[1];
 
   assert.ok(mobileRules, "expected a mobile trace stylesheet section");
