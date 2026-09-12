@@ -1,6 +1,8 @@
 import asyncio
 from typing import Any, Dict, List
 
+import pytest
+
 from api.context import (
     reset_current_entity_context,
     reset_run_context,
@@ -159,6 +161,99 @@ def test_legacy_report_tool_uses_context_and_new_protocol() -> None:
             assert event.data["tool_name"] == "search"
         finally:
             reset_current_entity_context(entity_token)
+            reset_run_context(run_token)
+            reset_thread_context(thread_token)
+            monitor.websocket_manager = previous_manager
+
+    asyncio.run(scenario())
+
+
+def test_traced_tool_records_completed_output_for_the_same_call() -> None:
+    async def scenario() -> None:
+        await trace_store.clear_all()
+        previous_manager = monitor.websocket_manager
+        monitor.websocket_manager = None
+        thread_token = set_thread_context("thread-traced-tool")
+        run_token = set_run_context("run-traced-tool")
+        entity_token = set_current_entity_context("agent-root")
+
+        @monitor.traced_tool("catalog lookup")
+        def lookup_product(sku: str, limit: int = 5) -> dict:
+            return {"sku": sku, "matches": ["W585X"]}
+
+        try:
+            assert lookup_product("HUAWEI-W585X") == {
+                "sku": "HUAWEI-W585X",
+                "matches": ["W585X"],
+            }
+            for _ in range(10):
+                events = await trace_store.list_events("run-traced-tool")
+                if len(events) == 2:
+                    break
+                await asyncio.sleep(0)
+            else:
+                raise AssertionError("tool terminal event was not recorded")
+
+            started, completed = events
+            assert started.event == TraceEventType.TOOL_STARTED
+            assert completed.event == TraceEventType.TOOL_COMPLETED
+            assert completed.status == TraceStatus.COMPLETED
+            assert completed.tool_call_id == started.tool_call_id
+            assert completed.entity_id == started.entity_id
+            assert completed.input == {
+                "sku": "HUAWEI-W585X",
+                "limit": 5,
+            }
+            assert completed.output == {
+                "sku": "HUAWEI-W585X",
+                "matches": ["W585X"],
+            }
+            assert completed.data == {"tool_name": "catalog lookup"}
+            assert completed.duration_ms is not None
+        finally:
+            reset_current_entity_context(entity_token)
+            reset_run_context(run_token)
+            reset_thread_context(thread_token)
+            monitor.websocket_manager = previous_manager
+
+    asyncio.run(scenario())
+
+
+def test_traced_tool_records_failed_terminal_event() -> None:
+    async def scenario() -> None:
+        await trace_store.clear_all()
+        previous_manager = monitor.websocket_manager
+        monitor.websocket_manager = None
+        thread_token = set_thread_context("thread-failed-tool")
+        run_token = set_run_context("run-failed-tool")
+
+        @monitor.traced_tool("failing lookup")
+        def lookup_product() -> None:
+            raise RuntimeError("catalog unavailable")
+
+        try:
+            with pytest.raises(RuntimeError, match="catalog unavailable"):
+                lookup_product()
+            for _ in range(10):
+                events = await trace_store.list_events("run-failed-tool")
+                if len(events) == 2:
+                    break
+                await asyncio.sleep(0)
+            else:
+                raise AssertionError("tool failure event was not recorded")
+
+            started, failed = events
+            assert started.event == TraceEventType.TOOL_STARTED
+            assert failed.event == TraceEventType.TOOL_FAILED
+            assert failed.status == TraceStatus.FAILED
+            assert failed.tool_call_id == started.tool_call_id
+            assert failed.input == {}
+            assert failed.output is None
+            assert failed.error is not None
+            assert failed.error.type == "RuntimeError"
+            assert failed.error.message == "catalog unavailable"
+            assert failed.data == {"tool_name": "failing lookup"}
+        finally:
             reset_run_context(run_token)
             reset_thread_context(thread_token)
             monitor.websocket_manager = previous_manager

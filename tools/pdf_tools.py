@@ -15,6 +15,7 @@ from utils.word_converter import convert_md_to_pdf_via_word
 
 
 @tool
+@monitor.traced_tool("Markdown转PDF工具")
 def convert_md_to_pdf(
         md_filename: Annotated[str, "要转换的Markdown文档路径（包含.md后缀）"],
         pdf_filename: Annotated[Optional[str], "输出的PDF文件路径（可选，默认与源文件同名）"] = None
@@ -23,8 +24,6 @@ def convert_md_to_pdf(
     将Markdown文档转换为PDF（基于Word引擎）
     核心优化：路径与资源管理逻辑分离，只保留Tool层的基础调用
     """
-    monitor.report_tool("Markdown转PDF工具")
-
     try:
         # 1. 路径预处理
         session_dir = get_session_context()

@@ -33,6 +33,7 @@ def get_db_config():
     return config
 
 @tool
+@monitor.traced_tool("数据库表名查询工具：list_sql_tables")
 def list_sql_tables()->str:
     """
     查询当前库中所有可用的表！
@@ -40,8 +41,6 @@ def list_sql_tables()->str:
     :return: 有表： 可用的表有：表1,表2,表3....  没有表: 没有可用的表   出现异常：查询出现异常：异常信息
     """
 
-    # 埋点,调用工具了告诉前端哪个工具被调用了！！
-    monitor.report_tool(tool_name="数据库表名查询工具：list_sql_tables", args={})
     # 加载数据库信息配置
     config = get_db_config()
 
@@ -71,6 +70,7 @@ def list_sql_tables()->str:
 
 
 @tool
+@monitor.traced_tool("数据库表数据查询工具：get_table_data")
 def get_table_data(table_name)->str:
     """
     查询指定表名的数据！当前工具调用之前，必须先调用list_sql_tables完成表名的校验！
@@ -88,9 +88,6 @@ def get_table_data(table_name)->str:
                 1,张三,18\n
                 1,张三,18\n
     """
-    # 埋点,调用工具了告诉前端哪个工具被调用了！！
-    monitor.report_tool(tool_name="数据库表数据查询工具：get_table_data", args={"table_name":table_name})
-
     # 获取数据库参数
     config = get_db_config()
     # 1. 创建一个链接
@@ -137,6 +134,7 @@ def get_table_data(table_name)->str:
 
 
 @tool
+@monitor.traced_tool("数据库表数据查询工具：execute_sql_query")
 def execute_sql_query(query)->str:
     """
     执行自定义查询sql语句！切记：执行之前，需要通过执行 list_sql_tables明确表名！执行get_table_data
@@ -154,9 +152,6 @@ def execute_sql_query(query)->str:
                 1,张三,18\n
                 1,张三,18\n
     """
-    # 埋点,调用工具了告诉前端哪个工具被调用了！！
-    monitor.report_tool(tool_name="数据库表数据查询工具：execute_sql_query", args={"query":query})
-
     # 获取数据库参数
     config = get_db_config()
     # 1. 创建一个链接

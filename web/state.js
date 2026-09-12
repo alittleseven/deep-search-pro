@@ -45,6 +45,20 @@ const FAILED_EVENTS = new Set([
   "retrieval_failed",
   "report_failed",
 ]);
+const START_EVENT_FOR_TERMINAL_EVENT = {
+  run_completed: "run_started",
+  run_failed: "run_started",
+  agent_completed: "agent_started",
+  agent_failed: "agent_started",
+  model_completed: "model_started",
+  model_failed: "model_started",
+  tool_completed: "tool_started",
+  tool_failed: "tool_started",
+  retrieval_completed: "retrieval_started",
+  retrieval_failed: "retrieval_started",
+  report_completed: "report_started",
+  report_failed: "report_started",
+};
 
 function createRoles() {
   return Object.fromEntries(Object.keys(ROLE_DEFINITIONS).map((id) => [
@@ -80,6 +94,33 @@ function persistable(snapshot) {
 function eventKey(event) {
   return event.event_id
     || `${event.run_id || "run"}:${event.sequence || 0}:${event.event || event.type}`;
+}
+
+function lifecycleId(event) {
+  return event.tool_call_id || event.entity_id || null;
+}
+
+function replaceLifecycleStart(events, event) {
+  const startEvent = START_EVENT_FOR_TERMINAL_EVENT[event.event];
+  const id = lifecycleId(event);
+  if (!startEvent || !id) return false;
+
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const candidate = events[index];
+    if (
+      candidate.event === startEvent
+      && candidate.run_id === event.run_id
+      && lifecycleId(candidate) === id
+    ) {
+      events.splice(index, 1, {
+        ...event,
+        input: event.input ?? candidate.input ?? null,
+        started_at: event.started_at ?? candidate.started_at ?? candidate.timestamp,
+      });
+      return true;
+    }
+  }
+  return false;
 }
 
 function containsAny(value, terms) {
@@ -146,6 +187,7 @@ function initialSnapshot(selection = {}) {
     connection: "idle",
     query: "",
     events: [],
+    rawTraceEvents: [],
     rawMessages: [],
     clientErrors: [],
     roles: createRoles(),
@@ -205,6 +247,7 @@ export class ConsoleStore {
       taskStatus: "starting",
       query,
       events: [],
+      rawTraceEvents: [],
       rawMessages: [],
       clientErrors: [],
       roles: createRoles(),
@@ -232,6 +275,7 @@ export class ConsoleStore {
   prepareRestore() {
     this.eventIds.clear();
     this.snapshot.events = [];
+    this.snapshot.rawTraceEvents = [];
     this.snapshot.rawMessages = [];
     this.snapshot.roles = createRoles();
     this.snapshot.startedAt = null;
@@ -273,7 +317,13 @@ export class ConsoleStore {
       return false;
     }
     this.eventIds.add(key);
-    this.snapshot.events.push(event);
+    this.snapshot.rawTraceEvents.push(event);
+    this.snapshot.rawTraceEvents.sort(
+      (a, b) => (a.sequence || 0) - (b.sequence || 0),
+    );
+    if (!replaceLifecycleStart(this.snapshot.events, event)) {
+      this.snapshot.events.push(event);
+    }
     this.snapshot.events.sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
     this.snapshot.lastSequence = Math.max(
       this.snapshot.lastSequence,

@@ -5,8 +5,8 @@ import {
   fetchTrace,
   startTask,
   uploadFiles,
-} from "./api.js?v=20260821-5";
-import { isTerminalStatus } from "./state.js?v=20260821-5";
+} from "./api.js?v=20260910-5";
+import { isTerminalStatus } from "./state.js?v=20260910-5";
 
 export class RunClient {
   constructor({ store, onNotice = () => {} }) {

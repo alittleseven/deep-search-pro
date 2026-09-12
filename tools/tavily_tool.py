@@ -25,6 +25,7 @@ tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 # 步骤2： 定义一个网络搜索工具
 @tool
+@monitor.traced_tool("网络搜索工具")
 def internet_search(
         query: str,
         topic: Literal[ "news",  "finance",  "general"] = "general",
@@ -40,12 +41,6 @@ def internet_search(
     :param include_raw_content: 是否返回原内容 False 精简 True 详细
     :return: 
     """
-    # 每次调用工具，都都会向前端推进调用进度！
-    # 参数1： 工具的名字  参数2： 就是调用工具的参数信息
-    monitor.report_tool(tool_name="网络搜索工具",
-                        args={"query": query, "topic": topic, "max_results": max_results,
-                              "include_raw_content": include_raw_content})
-
     return tavily_client.search(query = query, topic =  topic,
                                 max_results = max_results, include_raw_content = include_raw_content)
 

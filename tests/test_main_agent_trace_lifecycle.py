@@ -16,13 +16,39 @@ class FakeMessage:
     content = "final answer"
 
 
+class TaskCallMessage:
+    content = ""
+    tool_calls = [
+        {
+            "name": "task",
+            "id": "subagent-call-1",
+            "args": {
+                "subagent_type": "数据库查询助手",
+                "description": "查询产品库存",
+            },
+        }
+    ]
+
+
+class TaskResultMessage:
+    tool_calls = []
+    tool_call_id = "subagent-call-1"
+    status = "success"
+    content = "库存查询完成"
+
+
 class FakeDeepAgent:
     def __init__(self) -> None:
         self.fail = False
+        self.chunks = None
 
     async def astream(self, payload, config):
         if self.fail:
             raise RuntimeError("model failure")
+        if self.chunks is not None:
+            for chunk in self.chunks:
+                yield chunk
+            return
         yield {"model": {"messages": [FakeMessage()]}}
 
 
@@ -100,13 +126,62 @@ def test_run_lifecycle_completed_uses_one_root_entity(monkeypatch) -> None:
             TraceEventType.RUN_COMPLETED,
         ]
         assert events[0].entity_id == events[-1].entity_id == "run-1"
+        assert events[1].status == TraceStatus.COMPLETED
+        assert events[1].input == {}
         assert events[-1].status == TraceStatus.COMPLETED
+        assert events[-1].input == {"query": "query"}
         assert events[-1].output == "final answer"
         assert events[-1].started_at == events[0].started_at
         assert events[-1].ended_at is not None
         assert events[-1].duration_ms is not None
         assert get_thread_context() is None
         assert get_run_context() is None
+
+    asyncio.run(scenario())
+
+
+def test_subagent_task_response_completes_the_matching_agent(monkeypatch) -> None:
+    async def scenario() -> None:
+        await trace_store.clear_all()
+        loaded, fake_graph = load_main_agent_module(monkeypatch)
+        fake_graph.chunks = [
+            {"model": {"messages": [TaskCallMessage()]}},
+            {"tools": {"messages": [TaskResultMessage()]}},
+            {"model": {"messages": [FakeMessage()]}},
+        ]
+        with tempfile.TemporaryDirectory(
+            prefix=".trace-test-",
+            dir=Path.cwd(),
+        ) as temporary_directory:
+            loaded.project_root_path = Path(temporary_directory)
+            previous_manager = monitor.websocket_manager
+            monitor.websocket_manager = None
+            try:
+                await loaded.run_deep_agent(
+                    "query",
+                    "thread-1",
+                    "run-subagent",
+                )
+            finally:
+                monitor.websocket_manager = previous_manager
+
+        events = await trace_store.list_events("run-subagent")
+        agent_events = [
+            event for event in events if event.node_type.value == "agent"
+        ]
+        assert [event.event for event in agent_events] == [
+            TraceEventType.AGENT_STARTED,
+            TraceEventType.AGENT_COMPLETED,
+        ]
+        assert agent_events[0].entity_id == agent_events[1].entity_id
+        assert agent_events[0].name == agent_events[1].name == "数据库查询助手"
+        assert agent_events[1].status == TraceStatus.COMPLETED
+        assert agent_events[1].input == {
+            "subagent_type": "数据库查询助手",
+            "description": "查询产品库存",
+        }
+        assert agent_events[1].output == "库存查询完成"
+        assert agent_events[1].duration_ms is not None
 
     asyncio.run(scenario())
 
@@ -142,6 +217,7 @@ def test_run_lifecycle_failure_emits_one_failed_terminal(monkeypatch) -> None:
         assert len(terminal) == 1
         assert terminal[0].event == TraceEventType.RUN_FAILED
         assert terminal[0].status == TraceStatus.FAILED
+        assert terminal[0].input == {"query": "query"}
         assert terminal[0].error.type == "RuntimeError"
         assert "model failure" in terminal[0].error.message
 

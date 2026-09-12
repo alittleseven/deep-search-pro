@@ -20,7 +20,7 @@ import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from api.context import (
     reset_current_agent_context,
@@ -83,12 +83,82 @@ async def run_deep_agent(
     started_at = datetime.now(timezone.utc)
     started_monotonic = time.perf_counter()
     final_output = None
+    pending_agents: Dict[str, Dict[str, Any]] = {}
 
     session_id_token = set_thread_context(session_id)
     run_id_token = set_run_context(run_id)
     entity_id_token = set_current_entity_context(root_entity_id)
     agent_id_token = set_current_agent_context(root_entity_id)
     session_dir_token = None
+
+    async def settle_agent(
+        task_call_id: str,
+        *,
+        output: Any = None,
+        error: Any = None,
+        cancelled: bool = False,
+    ) -> None:
+        pending = pending_agents.pop(task_call_id, None)
+        if pending is None:
+            return
+
+        ended_at = datetime.now(timezone.utc)
+        duration_ms = int(
+            (time.perf_counter() - pending["started_monotonic"]) * 1_000
+        )
+        if error is None:
+            await monitor.emit_event(
+                event=TraceEventType.AGENT_COMPLETED,
+                node_type=TraceNodeType.AGENT,
+                status=TraceStatus.COMPLETED,
+                entity_id=pending["entity_id"],
+                parent_id=root_entity_id,
+                tool_call_id=task_call_id,
+                name=pending["name"],
+                message=f"助手执行完成: {pending['name']}",
+                started_at=pending["started_at"],
+                ended_at=ended_at,
+                duration_ms=duration_ms,
+                input=pending["input"],
+                output=output,
+                data={"assistant_name": pending["name"]},
+                thread_id=session_id,
+                run_id=run_id,
+            )
+            return
+
+        await monitor.emit_event(
+            event=TraceEventType.AGENT_FAILED,
+            node_type=TraceNodeType.AGENT,
+            status=TraceStatus.CANCELLED if cancelled else TraceStatus.FAILED,
+            entity_id=pending["entity_id"],
+            parent_id=root_entity_id,
+            tool_call_id=task_call_id,
+            name=pending["name"],
+            message=f"助手执行失败: {pending['name']}",
+            started_at=pending["started_at"],
+            ended_at=ended_at,
+            duration_ms=duration_ms,
+            input=pending["input"],
+            error=error,
+            data={"assistant_name": pending["name"]},
+            thread_id=session_id,
+            run_id=run_id,
+        )
+
+    async def settle_all_agents(
+        *,
+        output: Any = None,
+        error: Any = None,
+        cancelled: bool = False,
+    ) -> None:
+        for task_call_id in list(pending_agents):
+            await settle_agent(
+                task_call_id,
+                output=output,
+                error=error,
+                cancelled=cancelled,
+            )
 
     print(
         "当前会话的main_agent开始执行了！ "
@@ -137,12 +207,17 @@ async def run_deep_agent(
                 )
 
         session_dir_token = set_session_context(session_dir_str)
+        session_created_at = datetime.now(timezone.utc)
         await monitor.emit_event(
             event=TraceEventType.SESSION_CREATED,
             node_type=TraceNodeType.RUN,
-            status=TraceStatus.RUNNING,
+            status=TraceStatus.COMPLETED,
             entity_id=root_entity_id,
             message=f"工作目录已创建: {session_dir_str}",
+            started_at=session_created_at,
+            ended_at=session_created_at,
+            duration_ms=0,
+            input={},
             output={"path": session_dir_str},
             data={"path": session_dir_str},
             thread_id=session_id,
@@ -193,11 +268,73 @@ async def run_deep_agent(
                                   }                                
                                 """
                                 if tool_call['name'] == 'task':
-                                    # 调用某个子智能体
-                                    monitor.report_assistant(tool_call['args']['subagent_type'],{'description':tool_call['args']['description']})
+                                    # ``task`` returns a ToolMessage with the same ID.
+                                    # Keep that ID to close this agent span when it returns.
+                                    task_call_id = str(
+                                        tool_call.get("id") or uuid.uuid4()
+                                    )
+                                    agent_args = tool_call['args']
+                                    agent_name = agent_args['subagent_type']
+                                    agent_started_at = datetime.now(timezone.utc)
+                                    agent_entity_id = str(uuid.uuid4())
+                                    pending_agents[task_call_id] = {
+                                        "entity_id": agent_entity_id,
+                                        "name": agent_name,
+                                        "input": agent_args,
+                                        "started_at": agent_started_at,
+                                        "started_monotonic": time.perf_counter(),
+                                    }
+                                    await monitor.emit_event(
+                                        event=TraceEventType.AGENT_STARTED,
+                                        node_type=TraceNodeType.AGENT,
+                                        status=TraceStatus.RUNNING,
+                                        entity_id=agent_entity_id,
+                                        parent_id=root_entity_id,
+                                        tool_call_id=task_call_id,
+                                        name=agent_name,
+                                        message=f"正在调用助手: {agent_name}",
+                                        started_at=agent_started_at,
+                                        input=agent_args,
+                                        metadata={"legacy_event": "assistant_call"},
+                                        data={"assistant_name": agent_name},
+                                        thread_id=session_id,
+                                        run_id=run_id,
+                                    )
                         elif last_msg.content:
                             print("主智能体已生成最终结果")
                             final_output = last_msg.content
+                    elif node_name == 'tools':
+                        for tool_message in messages:
+                            task_call_id = getattr(
+                                tool_message,
+                                "tool_call_id",
+                                None,
+                            )
+                            if isinstance(tool_message, dict):
+                                task_call_id = tool_message.get(
+                                    "tool_call_id",
+                                    task_call_id,
+                                )
+                            if not task_call_id:
+                                continue
+
+                            result = getattr(tool_message, "content", None)
+                            status = getattr(tool_message, "status", None)
+                            if isinstance(tool_message, dict):
+                                result = tool_message.get("content", result)
+                                status = tool_message.get("status", status)
+                            if status == "error":
+                                await settle_agent(
+                                    str(task_call_id),
+                                    error=result or "子智能体任务失败",
+                                )
+                            else:
+                                await settle_agent(
+                                    str(task_call_id),
+                                    output=result,
+                                )
+
+        await settle_all_agents()
 
         ended_at = datetime.now(timezone.utc)
         duration_ms = int((time.perf_counter() - started_monotonic) * 1_000)
@@ -211,14 +348,16 @@ async def run_deep_agent(
             started_at=started_at,
             ended_at=ended_at,
             duration_ms=duration_ms,
+            input={"query": task_query},
             output=final_output,
-            data={"result": final_output},
+            data={},
             thread_id=session_id,
             run_id=run_id,
         )
     except asyncio.CancelledError as exc:
         ended_at = datetime.now(timezone.utc)
         try:
+            await settle_all_agents(error=exc, cancelled=True)
             await monitor.emit_event(
                 event=TraceEventType.RUN_FAILED,
                 node_type=TraceNodeType.RUN,
@@ -231,6 +370,7 @@ async def run_deep_agent(
                 duration_ms=int(
                     (time.perf_counter() - started_monotonic) * 1_000
                 ),
+                input={"query": task_query},
                 error=exc,
                 thread_id=session_id,
                 run_id=run_id,
@@ -244,6 +384,7 @@ async def run_deep_agent(
     except Exception as exc:
         ended_at = datetime.now(timezone.utc)
         try:
+            await settle_all_agents(error=exc)
             await monitor.emit_event(
                 event=TraceEventType.RUN_FAILED,
                 node_type=TraceNodeType.RUN,
@@ -256,6 +397,7 @@ async def run_deep_agent(
                 duration_ms=int(
                     (time.perf_counter() - started_monotonic) * 1_000
                 ),
+                input={"query": task_query},
                 error=exc,
                 thread_id=session_id,
                 run_id=run_id,

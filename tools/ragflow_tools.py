@@ -15,6 +15,7 @@ ragflow_client = RAGFlow(api_key=api_key,base_url=base_url)
 
 # 1. 查询现在知识库中有哪些聊天助手和对应知识库的信息 （方便我们知道rag可以给我们提供哪些数据）
 @tool
+@monitor.traced_tool("ragflow聊天助手列表查询工具：get_assistant_list")
 def get_assistant_list() -> str:
     """
     调用此工具，可以查询ragflow服务器中有哪些助手和助手关联的知识库信息！
@@ -25,9 +26,6 @@ def get_assistant_list() -> str:
              异常 -> 查询助手信息异常，无可用助手
     :return:
     """
-
-    # 埋点,调用工具了告诉前端哪个工具被调用了！！
-    monitor.report_tool(tool_name="ragflow聊天助手列表查询工具：get_assistant_list")
 
     # 1. 创建ragflow客户端
     try:
@@ -55,6 +53,7 @@ def get_assistant_list() -> str:
 
 # 2. 对某个助手进行提问（创建会话 -》 提问 -》 删除会话）
 @tool
+@monitor.traced_tool("ragflow提问助手工具：create_ask_delete")
 def create_ask_delete(chat_name,question)->str:
     """
     想某个助手，创建单次会话进行提问，提问完毕以后会关闭会话！
@@ -64,8 +63,6 @@ def create_ask_delete(chat_name,question)->str:
     :param question: 本次提问的问题
     :return: 返回提问的结果
     """
-    # 埋点,调用工具了告诉前端哪个工具被调用了！！
-    monitor.report_tool(tool_name="ragflow提问助手工具：create_ask_delete",args={"chat_name":chat_name,"question":question})
     # 1. 创建ragflow客户端
     # 2. 查询对应name的chat
     try:

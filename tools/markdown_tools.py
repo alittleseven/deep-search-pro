@@ -13,6 +13,7 @@ from utils.path_utils import resolve_path
 
 # Markdown生成工具
 @tool
+@monitor.traced_tool("Markdown文档生成工具")
 def generate_markdown(
         content: Annotated[str, "要写入Markdown文档的文本内容"],
         filename: Annotated[str, "Markdown文档的文件名（不包含扩展名或包含.md）"],
@@ -20,7 +21,6 @@ def generate_markdown(
 ):
     """根据提供的文本内容，生成对应的Markdown(.md)文件"""
     print(f"路径是{path}")
-    monitor.report_tool("Markdown文档生成工具", {"写入的文本内容": content})
     if not filename.endswith('.md'):
         filename += '.md'
 

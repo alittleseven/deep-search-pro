@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#090b0c">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f6f7f8">
   <meta name="description" content="Deep Search 运行追踪与诊断">
   <title>运行详情 - Deep Search</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.ico">
-  <link rel="stylesheet" href="/static/styles.css?v=20260821-5">
-  <link rel="stylesheet" href="/static/trace.css?v=20260821-5">
+  <link rel="stylesheet" href="/static/styles.css?v=20260910-5">
+  <link rel="stylesheet" href="/static/trace.css?v=20260910-5">
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到运行详情</a>
@@ -95,7 +95,7 @@
 
             <div class="metrics" aria-label="运行指标">
               <div class="metric"><span>耗时</span><strong id="metric-elapsed">-</strong></div>
-              <div class="metric"><span>事件</span><strong id="metric-events">0</strong></div>
+              <div class="metric"><span>调用记录</span><strong id="metric-events">0</strong></div>
               <div class="metric"><span>活跃角色</span><strong id="metric-agent">-</strong></div>
               <div class="metric"><span>工具调用</span><strong id="metric-tools">0</strong></div>
               <div class="metric"><span>生成文件</span><strong id="metric-files">0</strong></div>
@@ -174,7 +174,7 @@
                   <button class="active" type="button" data-inspector-tab="overview">概览</button>
                   <button type="button" data-inspector-tab="input">输入</button>
                   <button type="button" data-inspector-tab="output">输出</button>
-                  <button type="button" data-inspector-tab="event">事件</button>
+                  <button type="button" data-inspector-tab="event">完整记录</button>
                   <button type="button" data-inspector-tab="error">错误</button>
                 </nav>
                 <div class="inspector-body" id="inspector-body"></div>
@@ -188,7 +188,7 @@
               <button class="records-collapse" id="records-collapse" type="button" aria-expanded="true">收起运行记录</button>
             </header>
             <nav class="bottom-tabs" aria-label="运行记录分类">
-              <button class="active" type="button" data-bottom-tab="events">事件 <span id="tab-event-count">0</span></button>
+              <button class="active" type="button" data-bottom-tab="events">调用记录 <span id="tab-event-count">0</span></button>
               <button type="button" data-bottom-tab="report">最终报告</button>
               <button type="button" data-bottom-tab="files">生成文件 <span id="tab-file-count">0</span></button>
               <button type="button" data-bottom-tab="raw">原始数据</button>
@@ -196,13 +196,10 @@
             <div class="bottom-content" id="bottom-content">
               <section class="tab-panel active" data-bottom-panel="events">
                 <div class="event-tools">
-                  <label><span class="sr-only">搜索事件</span><input id="event-search" name="event-search" type="search" placeholder="搜索事件…" autocomplete="off"></label>
+                  <label><span class="sr-only">搜索调用记录</span><input id="event-search" name="event-search" type="search" placeholder="搜索调用记录…" autocomplete="off"></label>
                   <label><span class="sr-only">按状态筛选</span><select id="event-status-filter" name="event-status-filter" autocomplete="off"><option value="all">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option></select></label>
                 </div>
-                <div class="events-table">
-                  <div class="events-header event-grid" aria-hidden="true"><span>时间</span><span>角色 / 工具</span><span>事件</span><span>状态</span><span>消息</span></div>
-                  <div class="events-list" id="events-list"><div class="empty-state">暂无追踪事件</div></div>
-                </div>
+                <div class="call-records" id="events-list"><div class="empty-state">暂无调用记录</div></div>
               </section>
               <section class="tab-panel report-panel" data-bottom-panel="report"><div class="markdown-body" id="final-report"><div class="empty-state">运行完成后显示最终报告</div></div></section>
               <section class="tab-panel" data-bottom-panel="files"><div class="files-list" id="files-list"><div class="empty-state">暂无生成文件</div></div></section>
@@ -217,6 +214,6 @@
   <div class="notice hidden" id="notice" role="status" aria-live="polite">
     <span id="notice-text"></span><button type="button" id="dismiss-notice">关闭</button>
   </div>
-  <script type="module" src="/static/app.js?v=20260821-5"></script>
+  <script type="module" src="/static/app.js?v=20260910-5"></script>
 </body>
 </html>

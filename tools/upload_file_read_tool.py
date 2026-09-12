@@ -34,6 +34,7 @@ except ImportError:
 #         instruction: 对提取内容的具体指令（例如：'提取摘要', '统计数据'）
 
 @tool
+@monitor.traced_tool("文件内容读取工具")
 def read_file_content(
         filename: Annotated[str, "要读取的文件名或路径（支持 .md, .docx, .pdf, .xlsx, .xls）"],
         instruction: Annotated[str, "对提取内容的具体指令（例如：'提取摘要', '统计数据'）"] = "提取全部内容"
@@ -42,8 +43,6 @@ def read_file_content(
     读取指定文件的内容。支持 Markdown(.md)、Word(.docx)、PDF(.pdf) 和 Excel(.xlsx/.xls)。
     对于 Excel 文件，会自动提供数据统计信息（head 和 describe）。
     """
-    monitor.report_tool("文件内容读取工具", {"filename": filename, "instruction": instruction})
-
     # ====================== 1. Path 重构路径解析 ======================
     session_dir = get_session_context()
     file_path = Path(resolve_path(filename, session_dir))  # 转为Path对象

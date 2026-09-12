@@ -1,8 +1,11 @@
 import asyncio
 import concurrent.futures
+import functools
+import inspect
+import time
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Awaitable, Dict, List, Optional, Union
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
 from uuid import uuid4
 
 from fastapi import WebSocket
@@ -251,6 +254,112 @@ class ToolMonitor:
 
     def set_websocket_manager(self, websocket_manager: ConnectionManager) -> None:
         self.websocket_manager = websocket_manager
+
+    def traced_tool(self, tool_name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Wrap a synchronous LangChain tool with paired trace events."""
+
+        def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
+            signature = inspect.signature(function)
+
+            @functools.wraps(function)
+            def wrapped(*args: Any, **kwargs: Any) -> Any:
+                try:
+                    bound_arguments = signature.bind(*args, **kwargs)
+                    bound_arguments.apply_defaults()
+                    tool_input: Dict[str, Any] = dict(bound_arguments.arguments)
+                except TypeError:
+                    tool_input = dict(kwargs)
+
+                tool_call_id = str(uuid4())
+                started_at = datetime.now(timezone.utc)
+                started_monotonic = time.perf_counter()
+                thread_id = get_thread_context() or "legacy"
+                run_id = get_run_context() or f"legacy-{uuid4()}"
+                parent_id = (
+                    get_current_agent_context()
+                    or get_current_entity_context()
+                )
+
+                self._dispatch_trace_event(
+                    event=TraceEventType.TOOL_STARTED,
+                    node_type=TraceNodeType.TOOL,
+                    status=TraceStatus.RUNNING,
+                    entity_id=tool_call_id,
+                    parent_id=parent_id,
+                    tool_call_id=tool_call_id,
+                    name=tool_name,
+                    message=f"开始执行工具: {tool_name}",
+                    started_at=started_at,
+                    input=tool_input,
+                    metadata={"legacy_event": "tool_start"},
+                    data={"tool_name": tool_name},
+                    thread_id=thread_id,
+                    run_id=run_id,
+                )
+
+                try:
+                    output = function(*args, **kwargs)
+                except BaseException as exc:
+                    self._dispatch_trace_event(
+                        event=TraceEventType.TOOL_FAILED,
+                        node_type=TraceNodeType.TOOL,
+                        status=TraceStatus.FAILED,
+                        entity_id=tool_call_id,
+                        parent_id=parent_id,
+                        tool_call_id=tool_call_id,
+                        name=tool_name,
+                        message=f"工具执行失败: {tool_name}",
+                        started_at=started_at,
+                        ended_at=datetime.now(timezone.utc),
+                        duration_ms=int(
+                            (time.perf_counter() - started_monotonic) * 1_000
+                        ),
+                        input=tool_input,
+                        error=exc,
+                        metadata={"legacy_event": "tool_error"},
+                        data={"tool_name": tool_name},
+                        thread_id=thread_id,
+                        run_id=run_id,
+                    )
+                    raise
+
+                self._dispatch_trace_event(
+                    event=TraceEventType.TOOL_COMPLETED,
+                    node_type=TraceNodeType.TOOL,
+                    status=TraceStatus.COMPLETED,
+                    entity_id=tool_call_id,
+                    parent_id=parent_id,
+                    tool_call_id=tool_call_id,
+                    name=tool_name,
+                    message=f"工具执行完成: {tool_name}",
+                    started_at=started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    duration_ms=int(
+                        (time.perf_counter() - started_monotonic) * 1_000
+                    ),
+                    input=tool_input,
+                    output=output,
+                    metadata={"legacy_event": "tool_complete"},
+                    data={"tool_name": tool_name},
+                    thread_id=thread_id,
+                    run_id=run_id,
+                )
+                return output
+
+            return wrapped
+
+        return decorator
+
+    def _dispatch_trace_event(self, **kwargs: Any) -> None:
+        """Schedule trace delivery without changing the wrapped tool outcome."""
+
+        try:
+            self._dispatch(self.emit_event(**kwargs))
+        except Exception as exc:
+            print(
+                "[Monitor] Scheduled lifecycle trace emission failed: "
+                f"{type(exc).__name__}"
+            )
 
     async def emit_event(
         self,

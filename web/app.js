@@ -1,22 +1,30 @@
-import { downloadUrl } from "./api.js?v=20260821-5";
-import { renderMarkdown, stringifyValue } from "./markdown.js?v=20260821-5";
-import { RunClient } from "./run-client.js?v=20260821-5";
+import { downloadUrl } from "./api.js?v=20260910-5";
+import { renderMarkdown, stringifyValue } from "./markdown.js?v=20260910-5";
+import { RunClient } from "./run-client.js?v=20260910-5";
 import {
   chatUrl,
   createSessionRecord,
   parseTraceSelection,
   restoredQuery,
   SessionRepository,
-} from "./session.js?v=20260821-5";
+} from "./session.js?v=20260910-5";
 import {
   ConsoleStore,
   ROLE_DEFINITIONS,
-  roleForEvent,
-} from "./state.js?v=20260821-5";
+} from "./state.js?v=20260910-5";
 import {
   ExecutionVisualizer,
   statusForNode,
-} from "./visualizer.js?v=20260821-5";
+} from "./visualizer.js?v=20260910-5";
+import {
+  traceCallRecords,
+  traceRecordKind,
+  traceRecordListFields,
+  traceRecordName,
+  traceRecordSearchText,
+  traceRecordStatusLabel,
+  traceValueSummary,
+} from "./trace-record.js?v=20260910-5";
 
 const repository = new SessionRepository();
 const fallback = repository.list()[0] || {};
@@ -168,6 +176,10 @@ function latestActiveRole(snapshot) {
     })[0];
 }
 
+function callRecords(snapshot) {
+  return traceCallRecords(snapshot.events);
+}
+
 function renderHeader(snapshot) {
   elements["thread-id"].textContent = formatIdentifier(snapshot.threadId);
   elements["thread-id"].title = snapshot.threadId;
@@ -194,9 +206,10 @@ function renderHeader(snapshot) {
 }
 
 function renderMetrics(snapshot) {
-  elements["metric-events"].textContent = String(snapshot.events.length);
+  const records = callRecords(snapshot);
+  elements["metric-events"].textContent = String(records.length);
   elements["metric-tools"].textContent = String(
-    snapshot.events.filter((event) => event.event === "tool_started").length,
+    records.filter((event) => event.node_type === "tool").length,
   );
   elements["metric-files"].textContent = String(snapshot.files.length);
   elements["metric-connection"].textContent = connectionLabel(snapshot.connection);
@@ -233,13 +246,6 @@ function renderAgents(snapshot) {
   elements["active-role-count"].textContent = `${activeCount} active`;
 }
 
-function eventSource(event) {
-  if (event.name) return event.name;
-  const role = roleForEvent(event);
-  if (role) return ROLE_DEFINITIONS[role].label;
-  return event.node_type || "Run";
-}
-
 function openInspector(nextSelection, trigger = document.activeElement) {
   selected = nextSelection;
   selectedTrigger = trigger instanceof HTMLElement ? trigger : null;
@@ -272,26 +278,31 @@ function selectNode(nodeId, trigger) {
   openInspector({ kind: "node", id: nodeId }, trigger);
 }
 
+function callRecordMeta(fields) {
+  return `${fields.kind} · ${formatTime(fields.executedAt)}`;
+}
+
 function renderEvents(snapshot) {
   const list = elements["events-list"];
   const normalizedSearch = eventSearch.toLocaleLowerCase();
-  const visibleEvents = snapshot.events.filter((event) => {
+  const records = callRecords(snapshot);
+  const visibleEvents = records.filter((event) => {
     const matchesStatus = eventStatusFilter === "all"
       || (event.status || "unknown") === eventStatusFilter;
-    const haystack = `${event.name || ""} ${event.event || ""} ${event.message || ""}`
-      .toLocaleLowerCase();
+    const haystack = traceRecordSearchText(event).toLocaleLowerCase();
     return matchesStatus && haystack.includes(normalizedSearch);
   });
   if (!visibleEvents.length) {
-    const message = snapshot.events.length
-      ? "没有符合筛选条件的事件。"
-      : "暂无追踪事件。";
+    const message = records.length
+      ? "没有符合筛选条件的调用记录。"
+      : "暂无调用记录。";
     list.replaceChildren(makeElement("div", "empty-state", message));
     return;
   }
   const fragment = document.createDocumentFragment();
   for (const event of visibleEvents) {
-    const row = makeElement("button", "event-row event-grid");
+    const fields = traceRecordListFields(event);
+    const row = makeElement("button", "call-record");
     row.type = "button";
     row.dataset.status = event.status || "unknown";
     if (
@@ -300,14 +311,22 @@ function renderEvents(snapshot) {
     ) {
       row.classList.add("selected");
     }
-    row.append(
-      makeElement("span", "", formatTime(event.timestamp)),
-      makeElement("span", "", eventSource(event)),
-      makeElement("span", "", formatEventName(event.event)),
-      makeElement("span", "event-status", event.status || "—"),
-      makeElement("span", "", event.message || "—"),
+    const identity = makeElement("div", "call-record-identity");
+    identity.append(
+      makeElement("strong", "call-record-name", fields.name),
+      makeElement("span", "call-record-meta", callRecordMeta(fields)),
     );
-    row.title = `Sequence ${event.sequence || "—"} · ${event.event}`;
+    const header = makeElement("div", "call-record-header");
+    header.append(
+      identity,
+      makeElement(
+        "span",
+        "call-record-status",
+        fields.status,
+      ),
+    );
+    row.append(header);
+    row.title = "查看完整调用记录";
     row.addEventListener("click", () => selectEvent(event, row));
     fragment.append(row);
   }
@@ -390,12 +409,13 @@ function renderFiles(snapshot) {
 }
 
 function renderRaw(snapshot) {
-  if (!snapshot.events.length && !snapshot.rawMessages.length && !snapshot.clientErrors.length) {
+  const traceEvents = snapshot.rawTraceEvents || snapshot.events;
+  if (!traceEvents.length && !snapshot.rawMessages.length && !snapshot.clientErrors.length) {
     elements["raw-events"].textContent = "No WebSocket messages received.";
     return;
   }
   elements["raw-events"].textContent = JSON.stringify({
-    trace_events: snapshot.events,
+    trace_events: traceEvents,
     websocket_messages: snapshot.rawMessages,
     client_errors: snapshot.clientErrors,
   }, null, 2);
@@ -403,7 +423,10 @@ function renderRaw(snapshot) {
 
 function eventForNode(snapshot, nodeId) {
   if (nodeId === "input") {
-    return snapshot.events.find((event) => event.event === "run_started") || null;
+    const traceHistory = snapshot.rawTraceEvents?.length
+      ? snapshot.rawTraceEvents
+      : snapshot.events;
+    return traceHistory.find((event) => event.event === "run_started") || null;
   }
   if (nodeId === "output") {
     return snapshot.events.findLast(
@@ -430,7 +453,7 @@ function selectedEvent(snapshot) {
 function selectedTitle(snapshot) {
   if (selected.kind === "event") {
     const event = selectedEvent(snapshot);
-    return event ? formatEventName(event.event) : "Event";
+    return event ? traceRecordName(event) : "调用记录";
   }
   return {
     input: "User Request",
@@ -455,9 +478,17 @@ function detailList(rows) {
   return list;
 }
 
-function jsonPanel(value, error = false) {
-  if (value === null || value === undefined) {
-    return makeElement("div", "inspector-empty", "No data is available for this section.");
+function isEmptyInspectorValue(value) {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return !value.trim();
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function jsonPanel(value, emptyMessage, error = false) {
+  if (isEmptyInspectorValue(value)) {
+    return makeElement("div", "inspector-empty", emptyMessage);
   }
   return makeElement("pre", `json-block${error ? " error-block" : ""}`, stringifyValue(value));
 }
@@ -469,47 +500,60 @@ function renderInspector(snapshot) {
     ? statusForNode(snapshot, selected.id)
     : event?.status || "unknown";
   elements["inspector-title"].textContent = title;
-  elements["inspector-status"].textContent = formatStatus(nodeStatus);
+  elements["inspector-status"].textContent = selected.kind === "event"
+    ? traceRecordStatusLabel(nodeStatus)
+    : formatStatus(nodeStatus);
   elements["inspector-status"].dataset.status = nodeStatus;
 
   let content;
   if (inspectorTab === "overview") {
     if (event) {
-      content = detailList([
-        ["Name", event.name || title],
-        ["Event type", event.event],
-        ["Status", event.status || "—"],
-        ["Time", formatTime(event.timestamp, true)],
-        ["Sequence", event.sequence ?? "—"],
-        ["Entity ID", event.entity_id || "—"],
-        ["Parent ID", event.parent_id || "—"],
-        ["Tool", event.node_type === "tool" ? event.name || "—" : "—"],
-        ["Duration", event.duration_ms == null ? "Unavailable" : formatDuration(event.duration_ms)],
-      ]);
+      const overviewRows = [
+        ["名称", traceRecordName(event)],
+        ["类型", traceRecordKind(event)],
+        ["状态", traceRecordStatusLabel(event.status)],
+        ["开始时间", formatTime(event.started_at || event.timestamp, true)],
+        [
+          "结束时间",
+          formatTime(
+            event.ended_at
+              || (["completed", "failed", "cancelled"].includes(event.status)
+                ? event.timestamp
+                : null),
+            true,
+          ),
+        ],
+        ["耗时", event.duration_ms == null ? "未记录" : formatDuration(event.duration_ms)],
+        ["入参摘要", traceValueSummary(event.input, "无入参")],
+        ["返回摘要", traceValueSummary(event.output, "无返回值")],
+      ];
+      const errorSummary = traceValueSummary(event.error, "");
+      if (errorSummary) overviewRows.push(["错误摘要", errorSummary]);
+      content = detailList(overviewRows);
     } else if (selected.kind === "node") {
       const purpose = ROLE_DEFINITIONS[selected.id]?.purpose
         || {
-          input: "The research task accepted by the HTTP API.",
-          synthesis: "An architectural phase without a dedicated event in the current producer.",
-          output: "The output provided by a terminal run event.",
+          input: "由 HTTP API 接收的用户任务。",
+          synthesis: "当前执行器未单独上报事件的汇总阶段。",
+          output: "由任务结束事件提供的最终输出。",
         }[selected.id];
       content = detailList([
-        ["Name", title],
-        ["Status", formatStatus(nodeStatus)],
-        ["Purpose", purpose || "—"],
-        ["Trace evidence", "No matching event observed"],
+        ["名称", title],
+        ["状态", formatStatus(nodeStatus)],
+        ["说明", purpose || "—"],
+        ["追踪证据", "未观察到对应调用"],
       ]);
     } else {
-      content = makeElement("div", "inspector-empty", "Select an event or graph node to inspect it.");
+      content = makeElement("div", "inspector-empty", "请选择一条调用记录或流程节点。");
     }
   } else if (inspectorTab === "input") {
-    content = jsonPanel(event?.input);
+    content = jsonPanel(event?.input, "本次调用没有入参。");
   } else if (inspectorTab === "output") {
-    content = jsonPanel(event?.output);
+    content = jsonPanel(event?.output, "本次调用没有返回值。");
   } else if (inspectorTab === "event") {
-    content = jsonPanel(event);
+    content = jsonPanel(event, "暂无完整记录。");
   } else {
-    content = jsonPanel(event?.error, true);
+    content = jsonPanel(event?.error, "本次调用没有错误。", true);
   }
   elements["inspector-body"].replaceChildren(content);
 }
@@ -536,7 +580,7 @@ function render(snapshot) {
   visualizer.update(snapshot);
   visualizer.select(selected.kind === "node" ? selected.id : "");
   elements["graph-empty"].classList.toggle("hidden", Boolean(snapshot.runId));
-  elements["tab-event-count"].textContent = String(snapshot.events.length);
+  elements["tab-event-count"].textContent = String(callRecords(snapshot).length);
   elements["tab-file-count"].textContent = String(snapshot.files.length);
 }
 
