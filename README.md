@@ -1,6 +1,7 @@
 <p align="center">
   <h1 align="center">🤖 Deep Search Pro</h1>
   <p align="center"><b>一个轻量的多智能体协作系统 —— Agent 开发入门实战项目</b></p>
+  <p align="center"><a href="README.en.md">English README</a></p>
   <p align="center">
     <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
     <img src="https://img.shields.io/badge/FastAPI-0.129.2-green.svg" alt="FastAPI">
